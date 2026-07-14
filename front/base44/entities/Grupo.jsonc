@@ -1,0 +1,27 @@
+{
+  "name": "Grupo",
+  "type": "object",
+  "properties": {
+    "nome": {
+      "type": "string"
+    },
+    "campi_id": {
+      "type": "string"
+    },
+    "descricao": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ativo",
+        "inativo"
+      ],
+      "default": "ativo"
+    }
+  },
+  "required": [
+    "nome",
+    "campi_id"
+  ]
+}

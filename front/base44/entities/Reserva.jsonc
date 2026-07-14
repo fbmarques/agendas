@@ -1,0 +1,67 @@
+{
+  "name": "Reserva",
+  "type": "object",
+  "properties": {
+    "titulo": {
+      "type": "string"
+    },
+    "motivo": {
+      "type": "string"
+    },
+    "campi_id": {
+      "type": "string"
+    },
+    "grupo_id": {
+      "type": "string"
+    },
+    "local_id": {
+      "type": "string"
+    },
+    "tipo_local": {
+      "type": "string"
+    },
+    "data_inicial": {
+      "type": "string",
+      "format": "date"
+    },
+    "data_final": {
+      "type": "string",
+      "format": "date"
+    },
+    "horario_inicial": {
+      "type": "string"
+    },
+    "horario_final": {
+      "type": "string"
+    },
+    "responsavel_nome": {
+      "type": "string"
+    },
+    "observacoes": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "confirmada",
+        "pendente",
+        "cancelada"
+      ],
+      "default": "confirmada"
+    },
+    "recorrente": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "titulo",
+    "motivo",
+    "local_id",
+    "data_inicial",
+    "data_final",
+    "horario_inicial",
+    "horario_final",
+    "responsavel_nome"
+  ]
+}

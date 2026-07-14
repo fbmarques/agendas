@@ -1,0 +1,33 @@
+{
+  "name": "Campi",
+  "type": "object",
+  "properties": {
+    "nome": {
+      "type": "string"
+    },
+    "sigla": {
+      "type": "string"
+    },
+    "endereco": {
+      "type": "string"
+    },
+    "cidade": {
+      "type": "string"
+    },
+    "descricao": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ativo",
+        "inativo"
+      ],
+      "default": "ativo"
+    }
+  },
+  "required": [
+    "nome",
+    "sigla"
+  ]
+}
