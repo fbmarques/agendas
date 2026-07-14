@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import {
   format, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, endOfDay,
-  eachDayOfInterval, isSameMonth, isSameDay, addDays, subDays, addWeeks, subWeeks,
+  eachDayOfInterval, isSameMonth, addDays, subDays, addWeeks, subWeeks,
   startOfWeek as sow, endOfWeek as eow, startOfDay, isToday, parseISO
 } from "date-fns";
 import { ptBR } from "date-fns/locale";

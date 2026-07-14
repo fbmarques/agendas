@@ -1,14 +1,142 @@
-import { createClient } from '@base44/sdk';
-import { appParams } from '@/lib/app-params';
+// Substituto do SDK do Base44: expõe a mesma superfície (base44.auth.*, base44.entities.*.
+// {list,create,update,delete,bulkCreate}), mas conversa com a API Laravel via fetch.
 
-const { appId, token, functionsVersion, appBaseUrl } = appParams;
+const TOKEN_KEY = "base44_access_token";
+const API_BASE = "/api";
 
-//Create a client with authentication required
-export const base44 = createClient({
-  appId,
-  token,
-  functionsVersion,
-  serverUrl: '',
-  requiresAuth: false,
-  appBaseUrl
-});
+function getToken() {
+  try {
+    return typeof window !== "undefined" ? window.localStorage.getItem(TOKEN_KEY) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setToken(token) {
+  try {
+    if (typeof window === "undefined") return;
+    if (token) window.localStorage.setItem(TOKEN_KEY, token);
+    else window.localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function unwrap(payload) {
+  if (payload && typeof payload === "object" && "data" in payload && Object.keys(payload).length === 1) {
+    return payload.data;
+  }
+  return payload;
+}
+
+async function request(method, path, body) {
+  const token = getToken();
+  const headers = { Accept: "application/json" };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  const contentType = res.headers.get("content-type") || "";
+  const isJson = contentType.includes("application/json");
+  const payload = isJson ? await res.json().catch(() => null) : null;
+
+  if (!res.ok) {
+    const err = new Error(payload?.message || `HTTP ${res.status}`);
+    err.status = res.status;
+    err.data = payload;
+    throw err;
+  }
+
+  return unwrap(payload);
+}
+
+const auth = {
+  async loginViaEmailPassword(email, password) {
+    const r = await request("POST", "/auth/login", { email, password });
+    if (r?.access_token) setToken(r.access_token);
+    return r;
+  },
+  async loginWithProvider(provider, redirect) {
+    return request("POST", `/auth/provider/${provider}`, { redirect });
+  },
+  async register({ email, password }) {
+    return request("POST", "/auth/register", { email, password });
+  },
+  async verifyOtp({ email, otpCode }) {
+    const r = await request("POST", "/auth/verify-otp", { email, otpCode });
+    if (r?.access_token) setToken(r.access_token);
+    return r;
+  },
+  async resendOtp(email) {
+    return request("POST", "/auth/resend-otp", { email });
+  },
+  async resetPasswordRequest(email) {
+    return request("POST", "/auth/forgot-password", { email });
+  },
+  async resetPassword({ resetToken, newPassword, email }) {
+    const payload = { resetToken, newPassword };
+    if (email) payload.email = email;
+    return request("POST", "/auth/reset-password", payload);
+  },
+  async me() {
+    return request("GET", "/auth/me");
+  },
+  async isAuthenticated() {
+    if (!getToken()) return false;
+    try {
+      await request("GET", "/auth/me");
+      return true;
+    } catch {
+      setToken(null);
+      return false;
+    }
+  },
+  async logout(redirect) {
+    try {
+      await request("POST", "/auth/logout");
+    } catch {
+      /* revoke may fail if token already invalid */
+    }
+    setToken(null);
+    if (redirect && typeof window !== "undefined") {
+      window.location.href = typeof redirect === "string" ? redirect : "/";
+    }
+  },
+  setToken(token) {
+    setToken(token);
+  },
+  redirectToLogin(from) {
+    if (typeof window !== "undefined") {
+      const suffix = from ? `?from=${encodeURIComponent(from)}` : "";
+      window.location.href = `/login${suffix}`;
+    }
+  },
+};
+
+function makeEntity(path) {
+  return {
+    list: () => request("GET", `/${path}`),
+    create: (data) => request("POST", `/${path}`, data),
+    update: (id, data) => request("PUT", `/${path}/${id}`, data),
+    delete: (id) => request("DELETE", `/${path}/${id}`),
+  };
+}
+
+const Reserva = makeEntity("reservas");
+Reserva.bulkCreate = (items) => request("POST", "/reservas/bulk", { reservas: items });
+
+export const base44 = {
+  auth,
+  entities: {
+    Campi: makeEntity("campi"),
+    Grupo: makeEntity("grupos"),
+    Local: makeEntity("locais"),
+    Reserva,
+    User: makeEntity("users"),
+  },
+};

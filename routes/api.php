@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\CampiController;
 use App\Http\Controllers\Api\GrupoController;
 use App\Http\Controllers\Api\LocalController;
 use App\Http\Controllers\Api\ReservaController;
+use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -49,6 +50,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('locais/{local}', [LocalController::class, 'update']);
     Route::delete('locais/{local}', [LocalController::class, 'destroy']);
 
+    Route::get('users', [UserController::class, 'index']);
     Route::get('minhas-reservas', [ReservaController::class, 'minhas']);
     Route::post('reservas', [ReservaController::class, 'store']);
     Route::post('reservas/bulk', [ReservaController::class, 'bulk']);

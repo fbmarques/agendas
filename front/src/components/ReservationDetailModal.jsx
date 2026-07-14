@@ -2,7 +2,7 @@ import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { getCorTipo } from "@/lib/tiposLocal";
-import { MapPin, Users, Calendar, Clock, User, FileText, Tag, Building2, Layers, Repeat, CheckCircle2, Clock3, XCircle } from "lucide-react";
+import { MapPin, Calendar, Clock, User, FileText, Tag, Building2, Layers, Repeat, CheckCircle2, Clock3, XCircle } from "lucide-react";
 
 export default function ReservationDetailModal({ reserva, local, campi, grupo, open, onClose }) {
   if (!reserva) return null;
