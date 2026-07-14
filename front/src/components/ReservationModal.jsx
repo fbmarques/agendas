@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TimeInput } from "@/components/ui/time-input";
 import { AlertTriangle, CheckCircle2, Lock } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { getCorTipo } from "@/lib/tiposLocal";
@@ -274,11 +275,11 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
                 </div>
                 <div>
                   <Label className="mb-1.5">Horário inicial *</Label>
-                  <Input type="time" lang="pt-BR" step="60" value={form.horario_inicial} onChange={(e) => setForm({ ...form, horario_inicial: e.target.value })} />
+                  <TimeInput value={form.horario_inicial} onChange={(e) => setForm({ ...form, horario_inicial: e.target.value })} />
                 </div>
                 <div>
                   <Label className="mb-1.5">Horário final *</Label>
-                  <Input type="time" lang="pt-BR" step="60" value={form.horario_final} onChange={(e) => setForm({ ...form, horario_final: e.target.value })} />
+                  <TimeInput value={form.horario_final} onChange={(e) => setForm({ ...form, horario_final: e.target.value })} />
                 </div>
               </div>
               {form.data_inicial && form.data_final && !datasValidas && (
