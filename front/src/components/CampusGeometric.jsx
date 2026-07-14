@@ -20,16 +20,19 @@ export default function CampusGeometric({ campi, grupos, locais }) {
   const minGap = 28;
 
   // Dynamic radius large enough so adjacent cards never overlap.
-  const minRadius = count <= 2 ? 0 : (cardW + minGap) / (2 * Math.sin(Math.PI / count));
+  const minRadius = count <= 1 ? 0 : (cardW + minGap) / (2 * Math.sin(Math.PI / count));
   const radius = Math.max(minRadius, 180);
   const pad = 40;
-  const W = count <= 2 ? 0 : Math.round(2 * radius + cardW + pad);
-  const H = count <= 2 ? 0 : Math.round(2 * radius + cardH + pad);
+  const W = count <= 1 ? 0 : Math.round(2 * radius + cardW + pad);
+  const H = count <= 1 ? 0 : Math.round(2 * radius + cardH + pad);
   const cx = W / 2;
   const cy = H / 2;
 
+  // Com 2 campi, dispõe horizontalmente (esquerda/direita).
+  // Com 3+, começa pelo topo e distribui radialmente.
+  const angleOffset = count === 2 ? 0 : -90;
   const pos = (i) => {
-    const angle = (360 / count) * i - 90;
+    const angle = (360 / count) * i + angleOffset;
     const rad = (angle * Math.PI) / 180;
     return { x: Math.cos(rad) * radius, y: Math.sin(rad) * radius };
   };
@@ -77,7 +80,7 @@ export default function CampusGeometric({ campi, grupos, locais }) {
   return (
     <div className="flex justify-center">
       {/* Desktop / tablet: geometric composition */}
-      {count <= 2 ? (
+      {count === 1 ? (
         <div className="hidden items-center justify-center gap-8 sm:flex">
           <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-2xl ring-8 ring-white">
             <Building2 className="h-7 w-7" />
