@@ -21,7 +21,7 @@ export default function CampusGeometric({ campi, grupos, locais }) {
 
   // Dynamic radius large enough so adjacent cards never overlap.
   const minRadius = count <= 1 ? 0 : (cardW + minGap) / (2 * Math.sin(Math.PI / count));
-  const radius = Math.max(minRadius, 180);
+  const radius = Math.max(minRadius, 260);
   const pad = 40;
   const W = count <= 1 ? 0 : Math.round(2 * radius + cardW + pad);
   const H = count <= 1 ? 0 : Math.round(2 * radius + cardH + pad);
@@ -82,9 +82,8 @@ export default function CampusGeometric({ campi, grupos, locais }) {
       {/* Desktop / tablet: geometric composition */}
       {count === 1 ? (
         <div className="hidden items-center justify-center gap-8 sm:flex">
-          <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-2xl ring-8 ring-white">
-            <Building2 className="h-7 w-7" />
-            <span className="mt-0.5 text-[8px] font-bold uppercase tracking-widest">Instituição</span>
+          <div className="flex h-24 w-24 items-center justify-center rounded-full bg-white shadow-2xl ring-8 ring-slate-100">
+            <img src="/logo.png" alt="Logo" className="h-16 w-16 object-contain" />
           </div>
           {campi.map((c) => renderCard(c))}
         </div>
@@ -94,10 +93,9 @@ export default function CampusGeometric({ campi, grupos, locais }) {
           style={{ width: W, height: H }}
         >
           {/* Central logo */}
-          <div className="absolute z-10 flex h-28 w-28 flex-col items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-2xl ring-8 ring-white"
+          <div className="absolute z-10 flex h-28 w-28 items-center justify-center rounded-full bg-white shadow-2xl ring-8 ring-slate-100"
             style={{ left: cx, top: cy, transform: "translate(-50%, -50%)" }}>
-            <Building2 className="h-8 w-8" />
-            <span className="mt-1 text-[9px] font-bold uppercase tracking-widest">Instituição</span>
+            <img src="/logo.png" alt="Logo" className="h-20 w-20 object-contain" />
           </div>
 
           {/* Connection lines via SVG */}
@@ -139,8 +137,8 @@ export default function CampusGeometric({ campi, grupos, locais }) {
       {/* Mobile: vertical carousel */}
       <div className="flex w-full snap-x snap-mandatory gap-4 overflow-x-auto px-1 pb-2 sm:hidden">
         <div className="flex shrink-0 flex-col items-center justify-center">
-          <div className="flex h-20 w-20 flex-col items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-lg">
-            <Building2 className="h-6 w-6" />
+          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-white shadow-lg ring-4 ring-slate-100">
+            <img src="/logo.png" alt="Logo" className="h-14 w-14 object-contain" />
           </div>
         </div>
         {campi.map((c) => {
