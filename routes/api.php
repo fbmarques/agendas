@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CampiController;
 use App\Http\Controllers\Api\GrupoController;
 use App\Http\Controllers\Api\LocalController;
+use App\Http\Controllers\Api\ReservaController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -28,6 +29,8 @@ Route::get('grupos', [GrupoController::class, 'index']);
 Route::get('grupos/{grupo}', [GrupoController::class, 'show']);
 Route::get('locais', [LocalController::class, 'index']);
 Route::get('locais/{local}', [LocalController::class, 'show']);
+Route::get('reservas', [ReservaController::class, 'index']);
+Route::get('reservas/{reserva}', [ReservaController::class, 'show']);
 
 // Escrita protegida (admin)
 Route::middleware('auth:sanctum')->group(function () {
@@ -45,4 +48,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('locais/{local}', [LocalController::class, 'update']);
     Route::patch('locais/{local}', [LocalController::class, 'update']);
     Route::delete('locais/{local}', [LocalController::class, 'destroy']);
+
+    Route::get('minhas-reservas', [ReservaController::class, 'minhas']);
+    Route::post('reservas', [ReservaController::class, 'store']);
+    Route::post('reservas/bulk', [ReservaController::class, 'bulk']);
+    Route::put('reservas/{reserva}', [ReservaController::class, 'update']);
+    Route::patch('reservas/{reserva}', [ReservaController::class, 'update']);
+    Route::delete('reservas/{reserva}', [ReservaController::class, 'destroy']);
 });
