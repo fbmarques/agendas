@@ -89,4 +89,10 @@
   body {
     @apply bg-background text-foreground font-body;
   }
+
+  /* Força inputs de tempo a exibirem 24h no Chromium/Brave/Safari,
+     mesmo quando o SO está em inglês. */
+  input[type="time"] {
+    -webkit-locale: "pt-BR";
+  }
 }

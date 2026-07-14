@@ -42,6 +42,8 @@ export default function RecurringDaysPicker({ value = {}, onChange }) {
                 <div className="mt-2 flex items-center gap-2 pl-6">
                   <Input
                     type="time"
+                    lang="pt-BR"
+                    step="60"
                     value={value[d.idx].horario_inicial}
                     onChange={(e) => updateTime(d.idx, "horario_inicial", e.target.value)}
                     className="h-8 w-28"
@@ -49,6 +51,8 @@ export default function RecurringDaysPicker({ value = {}, onChange }) {
                   <span className="text-xs text-slate-400">até</span>
                   <Input
                     type="time"
+                    lang="pt-BR"
+                    step="60"
                     value={value[d.idx].horario_final}
                     onChange={(e) => updateTime(d.idx, "horario_final", e.target.value)}
                     className="h-8 w-28"

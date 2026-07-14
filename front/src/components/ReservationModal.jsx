@@ -274,11 +274,11 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
                 </div>
                 <div>
                   <Label className="mb-1.5">Horário inicial *</Label>
-                  <Input type="time" value={form.horario_inicial} onChange={(e) => setForm({ ...form, horario_inicial: e.target.value })} />
+                  <Input type="time" lang="pt-BR" step="60" value={form.horario_inicial} onChange={(e) => setForm({ ...form, horario_inicial: e.target.value })} />
                 </div>
                 <div>
                   <Label className="mb-1.5">Horário final *</Label>
-                  <Input type="time" value={form.horario_final} onChange={(e) => setForm({ ...form, horario_final: e.target.value })} />
+                  <Input type="time" lang="pt-BR" step="60" value={form.horario_final} onChange={(e) => setForm({ ...form, horario_final: e.target.value })} />
                 </div>
               </div>
               {form.data_inicial && form.data_final && !datasValidas && (
