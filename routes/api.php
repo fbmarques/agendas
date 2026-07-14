@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CampiController;
+use App\Http\Controllers\Api\GrupoController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -22,6 +23,8 @@ Route::prefix('auth')->group(function () {
 // Leitura pública (Home, CampiDetail)
 Route::get('campi', [CampiController::class, 'index']);
 Route::get('campi/{campi}', [CampiController::class, 'show']);
+Route::get('grupos', [GrupoController::class, 'index']);
+Route::get('grupos/{grupo}', [GrupoController::class, 'show']);
 
 // Escrita protegida (admin)
 Route::middleware('auth:sanctum')->group(function () {
@@ -29,4 +32,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('campi/{campi}', [CampiController::class, 'update']);
     Route::patch('campi/{campi}', [CampiController::class, 'update']);
     Route::delete('campi/{campi}', [CampiController::class, 'destroy']);
+
+    Route::post('grupos', [GrupoController::class, 'store']);
+    Route::put('grupos/{grupo}', [GrupoController::class, 'update']);
+    Route::patch('grupos/{grupo}', [GrupoController::class, 'update']);
+    Route::delete('grupos/{grupo}', [GrupoController::class, 'destroy']);
 });
