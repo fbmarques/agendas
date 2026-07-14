@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CampiController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -16,4 +17,16 @@ Route::prefix('auth')->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
         Route::get('me', [AuthController::class, 'me']);
     });
+});
+
+// Leitura pública (Home, CampiDetail)
+Route::get('campi', [CampiController::class, 'index']);
+Route::get('campi/{campi}', [CampiController::class, 'show']);
+
+// Escrita protegida (admin)
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('campi', [CampiController::class, 'store']);
+    Route::put('campi/{campi}', [CampiController::class, 'update']);
+    Route::patch('campi/{campi}', [CampiController::class, 'update']);
+    Route::delete('campi/{campi}', [CampiController::class, 'destroy']);
 });
