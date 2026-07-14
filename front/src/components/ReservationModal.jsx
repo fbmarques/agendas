@@ -31,17 +31,28 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
     base44.auth.me().then(setUser).catch(() => {});
   }, []);
 
+  // Reseta o form toda vez que o modal abre, aplicando os pré-preenchimentos
+  // vindos do clique no card/data. Sem isso, valores da reserva anterior
+  // persistem entre aberturas (o componente fica montado no pai).
   useEffect(() => {
+    if (!open) return;
     const loc = preLocalId ? locais.find((l) => l.id === preLocalId) : null;
-    setForm((f) => ({
-      ...f,
-      campi_id: preCampiId || loc?.campi_id || f.campi_id,
-      grupo_id: preGrupoId || loc?.grupo_id || f.grupo_id,
-      local_id: preLocalId || f.local_id,
-      data_inicial: preData || f.data_inicial,
-      data_final: preData || f.data_final,
-    }));
-  }, [preCampiId, preGrupoId, preLocalId, preData, locais]);
+    setForm({
+      titulo: "",
+      motivo: "",
+      observacoes: "",
+      campi_id: preCampiId || loc?.campi_id || "",
+      grupo_id: preGrupoId || loc?.grupo_id || "",
+      local_id: preLocalId || "",
+      data_inicial: preData || "",
+      data_final: preData || "",
+      horario_inicial: "",
+      horario_final: "",
+    });
+    setTipoReserva("unica");
+    setDiasRecorrente({});
+    setLoading(false);
+  }, [open, preCampiId, preGrupoId, preLocalId, preData, locais]);
 
   const gruposFiltrados = grupos.filter((g) => g.campi_id === form.campi_id);
   const locaisFiltrados = locais.filter((l) => l.grupo_id === form.grupo_id);
