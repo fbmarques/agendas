@@ -21,9 +21,9 @@ class HealthTest extends TestCase
         $response->assertHeader('Content-Type', 'text/html; charset=UTF-8');
     }
 
-    public function test_api_route_is_registered(): void
+    public function test_api_auth_route_is_registered(): void
     {
-        $response = $this->getJson('/api/user');
+        $response = $this->getJson('/api/auth/me');
 
         $response->assertStatus(401);
     }
