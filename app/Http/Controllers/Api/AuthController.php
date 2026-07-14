@@ -219,7 +219,7 @@ class AuthController extends Controller
     private function userPayload(User $user): array
     {
         return [
-            'id' => $user->id,
+            'id' => (string) $user->id,
             'email' => $user->email,
             'full_name' => $user->full_name,
             'role' => $user->role,
