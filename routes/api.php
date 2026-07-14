@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CampiController;
 use App\Http\Controllers\Api\GrupoController;
+use App\Http\Controllers\Api\LocalController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -25,6 +26,8 @@ Route::get('campi', [CampiController::class, 'index']);
 Route::get('campi/{campi}', [CampiController::class, 'show']);
 Route::get('grupos', [GrupoController::class, 'index']);
 Route::get('grupos/{grupo}', [GrupoController::class, 'show']);
+Route::get('locais', [LocalController::class, 'index']);
+Route::get('locais/{local}', [LocalController::class, 'show']);
 
 // Escrita protegida (admin)
 Route::middleware('auth:sanctum')->group(function () {
@@ -37,4 +40,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('grupos/{grupo}', [GrupoController::class, 'update']);
     Route::patch('grupos/{grupo}', [GrupoController::class, 'update']);
     Route::delete('grupos/{grupo}', [GrupoController::class, 'destroy']);
+
+    Route::post('locais', [LocalController::class, 'store']);
+    Route::put('locais/{local}', [LocalController::class, 'update']);
+    Route::patch('locais/{local}', [LocalController::class, 'update']);
+    Route::delete('locais/{local}', [LocalController::class, 'destroy']);
 });
