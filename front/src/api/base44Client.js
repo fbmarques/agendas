@@ -147,5 +147,6 @@ export const base44 = {
     Local,
     Reserva,
     User: makeEntity("users"),
+    Periodo: makeEntity("periodos"),
   },
 };

@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CampiController;
 use App\Http\Controllers\Api\GrupoController;
 use App\Http\Controllers\Api\LocalController;
+use App\Http\Controllers\Api\PeriodoController;
 use App\Http\Controllers\Api\ReservaController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
@@ -38,6 +39,8 @@ Route::get('locais/{local}', [LocalController::class, 'show']);
 Route::get('locais/{local}/gerentes', [LocalController::class, 'gerentes']);
 Route::get('reservas', [ReservaController::class, 'index']);
 Route::get('reservas/{reserva}', [ReservaController::class, 'show']);
+Route::get('periodos', [PeriodoController::class, 'index']);
+Route::get('periodos/{periodo}', [PeriodoController::class, 'show']);
 
 // Escrita protegida (admin)
 Route::middleware('auth:sanctum')->group(function () {
@@ -66,4 +69,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('reservas/{reserva}', [ReservaController::class, 'update']);
     Route::patch('reservas/{reserva}', [ReservaController::class, 'update']);
     Route::delete('reservas/{reserva}', [ReservaController::class, 'destroy']);
+
+    Route::post('periodos', [PeriodoController::class, 'store']);
+    Route::put('periodos/{periodo}', [PeriodoController::class, 'update']);
+    Route::patch('periodos/{periodo}', [PeriodoController::class, 'update']);
+    Route::delete('periodos/{periodo}', [PeriodoController::class, 'destroy']);
 });

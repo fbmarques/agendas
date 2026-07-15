@@ -24,11 +24,15 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
   const [diasRecorrente, setDiasRecorrente] = useState({});
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [periodos, setPeriodos] = useState([]);
 
   const locked = !!preLocalId;
 
   useEffect(() => {
     base44.auth.me().then(setUser).catch(() => {});
+    base44.entities.Periodo.list()
+      .then((list) => setPeriodos((list || []).filter((p) => p.status === "ativo")))
+      .catch(() => {});
   }, []);
 
   // Reseta o form toda vez que o modal abre, aplicando os pré-preenchimentos
@@ -272,6 +276,26 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
               </button>
             </div>
           </div>
+
+          {periodos.length > 0 && (
+            <div>
+              <Label className="mb-1.5">Semestres</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {periodos.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setForm({ ...form, data_inicial: p.data_inicio, data_final: p.data_fim })}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:border-blue-300 hover:bg-blue-50"
+                    title={`${p.data_inicio} → ${p.data_fim}`}
+                  >
+                    {p.nome}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">Clique em um semestre para preencher as datas de início e fim automaticamente.</p>
+            </div>
+          )}
 
           {tipoReserva === "unica" ? (
             <>

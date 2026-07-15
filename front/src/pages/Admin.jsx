@@ -23,6 +23,7 @@ const SECTIONS = [
   { key: "tipos", label: "Tipos de Local", icon: Tag },
   { key: "reservas", label: "Reservas", icon: CalendarCheck },
   { key: "pendentes", label: "Pendentes", icon: ClipboardList },
+  { key: "periodos", label: "Períodos", icon: Clock },
   { key: "usuarios", label: "Usuários", icon: Users },
   { key: "relatorios", label: "Relatórios", icon: BarChart3 },
   { key: "config", label: "Configurações", icon: Settings },
@@ -35,6 +36,7 @@ export default function Admin() {
   const [locais, setLocais] = useState([]);
   const [reservas, setReservas] = useState([]);
   const [users, setUsers] = useState([]);
+  const [periodos, setPeriodos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -47,12 +49,14 @@ export default function Admin() {
       base44.entities.Local.list(),
       base44.entities.Reserva.list(),
       base44.entities.User.list().catch(() => []),
-    ]).then(([c, g, l, r, u]) => {
+      base44.entities.Periodo.list().catch(() => []),
+    ]).then(([c, g, l, r, u, p]) => {
       setCampi(c || []);
       setGrupos(g || []);
       setLocais(l || []);
       setReservas(r || []);
       setUsers(u || []);
+      setPeriodos(p || []);
       setLoading(false);
     });
   };
@@ -218,6 +222,19 @@ export default function Admin() {
           )}
           {section === "pendentes" && (
             <PendentesSection users={users} locais={locais} onChanged={loadAll} />
+          )}
+          {section === "periodos" && (
+            <AdminTable
+              title="Períodos" items={periodos} search={search} setSearch={setSearch}
+              columns={["nome", "status"]}
+              extraCol={{ header: "Início", render: (p) => p.data_inicio }}
+              extraCol2={{ header: "Fim", render: (p) => p.data_fim }}
+              onAdd={() => { setEditItem(null); setModalOpen(true); }}
+              onEdit={(item) => { setEditItem(item); setModalOpen(true); }}
+              onDelete={(item) => base44.entities.Periodo.delete(item.id).then(loadAll)}
+              renderForm={() => <PeriodoForm item={editItem} onSaved={() => { setModalOpen(false); loadAll(); }} />}
+              modalOpen={modalOpen} setModalOpen={setModalOpen}
+            />
           )}
           {section === "tipos" && (
             <div>
@@ -586,6 +603,31 @@ function PendentesSection({ users, locais, onChanged }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function PeriodoForm({ item, onSaved }) {
+  const [form, setForm] = useState(item || { nome: "", data_inicio: "", data_fim: "", status: "ativo" });
+  const save = async () => {
+    if (item?.id) await base44.entities.Periodo.update(item.id, form);
+    else await base44.entities.Periodo.create(form);
+    onSaved();
+  };
+  return (
+    <div className="space-y-3">
+      <div><Label>Nome *</Label><Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Ex.: 2026/1" /></div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><Label>Data início *</Label><Input type="date" value={form.data_inicio} onChange={(e) => setForm({ ...form, data_inicio: e.target.value })} /></div>
+        <div><Label>Data fim *</Label><Input type="date" value={form.data_fim} onChange={(e) => setForm({ ...form, data_fim: e.target.value })} /></div>
+      </div>
+      <div><Label>Status</Label>
+        <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="ativo">Ativo</SelectItem><SelectItem value="inativo">Inativo</SelectItem></SelectContent>
+        </Select>
+      </div>
+      <DialogFooter><Button variant="outline" onClick={onSaved}>Cancelar</Button><Button className="bg-blue-600" onClick={save}>Salvar</Button></DialogFooter>
     </div>
   );
 }
