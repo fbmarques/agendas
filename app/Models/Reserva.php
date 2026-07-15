@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'titulo', 'motivo', 'tipo_local',
     'data_inicial', 'data_final', 'horario_inicial', 'horario_final',
     'responsavel_nome', 'observacoes', 'status', 'recorrente',
+    'motivo_cancelamento', 'aprovada_por_id', 'aprovada_em',
+    'cancelada_por_id', 'cancelada_em',
 ])]
 class Reserva extends Model
 {
@@ -27,12 +29,24 @@ class Reserva extends Model
             'data_inicial' => 'date:Y-m-d',
             'data_final' => 'date:Y-m-d',
             'recorrente' => 'boolean',
+            'aprovada_em' => 'datetime',
+            'cancelada_em' => 'datetime',
         ];
     }
 
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function aprovadaPor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'aprovada_por_id');
+    }
+
+    public function canceladaPor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelada_por_id');
     }
 
     public function local(): BelongsTo
@@ -53,6 +67,11 @@ class Reserva extends Model
     public function scopeAtivas(Builder $q): Builder
     {
         return $q->where('status', '!=', 'cancelada');
+    }
+
+    public function scopePendentes(Builder $q): Builder
+    {
+        return $q->where('status', 'pendente');
     }
 
     /**

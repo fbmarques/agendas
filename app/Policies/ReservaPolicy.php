@@ -31,4 +31,15 @@ class ReservaPolicy
     {
         return $user->isAdmin() || $user->id === $reserva->user_id;
     }
+
+    public function aprovar(User $user, Reserva $reserva): bool
+    {
+        return $reserva->status === 'pendente' && $user->podeAprovarReserva($reserva);
+    }
+
+    public function cancelar(User $user, Reserva $reserva): bool
+    {
+        if ($reserva->status === 'cancelada') return false;
+        return $user->podeAprovarReserva($reserva) || $user->id === $reserva->user_id;
+    }
 }

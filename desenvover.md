@@ -568,3 +568,421 @@ Se `php artisan test` falhar em qualquer momento: **pare, corrija, rode de novo*
 ---
 
 **Este documento é a fonte da verdade do plano.** Se algo mudar de rota (nova entidade, novo endpoint, mudança de deploy), atualize aqui antes de codar — e siga o mesmo ciclo: testes → build → commit → push.
+
+---
+
+# PARTE II — Evolução do Sistema (Fases 8+)
+
+Esta parte complementa o plano original. Introduz aprovação de reservas, gerentes por Local, notificações por email, períodos (semestres), indisponibilidades de Local e cadastro de Recursos. **O ciclo padrão da seção 14 continua valendo** para todas as fases abaixo: implementar → testar → `npm run build` → commit → push.
+
+## 17. Visão Geral das Novas Funcionalidades
+
+| # | Funcionalidade | Fase |
+| - | --- | ---- |
+| 1 | Toggle "requer aprovação" por Local + fluxo pendente→confirmada/cancelada | Fase 8 |
+| 2 | Envio de email em criação, aprovação e cancelamento (com motivo) | Fase 9 |
+| 3 | Gerentes de Local (múltiplos por Local) — únicos que aprovam/cancelam | Fase 8 |
+| 4 | Cadastro de Períodos (semestres) pelo admin + botão que preenche datas | Fase 10 |
+| 5 | Cadastro de Recursos (som, copa, técnico…) com disponibilidade e agenda própria | Fase 12 |
+| 6 | Indisponibilidades de Local (feriados, férias, dia da semana, faixa horária) | Fase 11 |
+
+**Decisões arquiteturais confirmadas com o usuário:**
+- Reserva nasce `pendente` **apenas se** o Local tem `requer_aprovacao=true`. Caso contrário, mantém o comportamento atual (`confirmada`).
+- Somente gerentes daquele Local (e admin) podem aprovar ou cancelar. Cancelamento **sempre** exige `motivo_cancelamento`.
+- Botão "Semestre" preenche `data_inicial` e `data_final` do formulário de reserva. O usuário continua escolhendo horário e (se recorrente) dias da semana.
+- Emails via **SMTP da Hostinger** com fila **`database`** (`QUEUE_CONNECTION=database`). Em dev pode-se usar `MAIL_MAILER=log`.
+
+---
+
+## 18. Fase 8 — Gerentes de Local + Fluxo de Aprovação
+
+### 18.1 Migrations
+
+- `add_requer_aprovacao_to_locais_table`:
+  - `locais.requer_aprovacao` — `boolean` default `false`.
+- `create_local_gerentes_table` (pivot N:N):
+  - `local_id` FK `locais.id` cascadeOnDelete.
+  - `user_id` FK `users.id` cascadeOnDelete.
+  - Primary composta `(local_id, user_id)`.
+- `add_aprovacao_fields_to_reservas_table`:
+  - `motivo_cancelamento` — `text nullable`.
+  - `aprovada_por_id` — `foreignId nullable constrained('users')->nullOnDelete()`.
+  - `aprovada_em` — `timestamp nullable`.
+  - `cancelada_por_id` — `foreignId nullable constrained('users')->nullOnDelete()`.
+  - `cancelada_em` — `timestamp nullable`.
+- **Compatibilidade SQLite/MySQL**: usar `->change()` só quando necessário; preferir novas colunas nullable.
+
+### 18.2 Models
+
+- `Local`:
+  - Adicionar `requer_aprovacao` em `#[Fillable]` e cast `boolean`.
+  - Relação `gerentes(): BelongsToMany` sobre `local_gerentes`.
+  - Método `temGerente(User $u): bool`.
+- `User`:
+  - Relação inversa `locaisGerenciados(): BelongsToMany`.
+  - Helper `podeAprovarReserva(Reserva $r): bool { return $this->isAdmin() || $r->local->temGerente($this); }`.
+- `Reserva`:
+  - Adicionar campos novos ao `#[Fillable]`.
+  - Casts: `aprovada_em`/`cancelada_em` → `datetime`.
+  - Scope `scopePendentes` e `scopePorGerente(User $u)` para listar as reservas que aquele usuário pode aprovar.
+
+### 18.3 Serviço/Controller
+
+- Na criação (`ReservaController@store` e `@bulk`):
+  ```php
+  $local = Local::findOrFail($data['local_id']);
+  $data['status'] = $local->requer_aprovacao ? 'pendente' : 'confirmada';
+  ```
+- Novos endpoints (sob `auth:sanctum`):
+  ```
+  PATCH  /api/reservas/{reserva}/aprovar   → 200 { reserva }
+  PATCH  /api/reservas/{reserva}/cancelar  → 200 { reserva }   // body: { motivo_cancelamento: '...' }
+  GET    /api/reservas/pendentes            → lista as reservas pendentes que o usuário pode aprovar (admin vê todas)
+  ```
+- Não permitir aprovar reserva já `cancelada`; não permitir cancelar já `cancelada`.
+- **Regra de negócio**: cancelar exige `motivo_cancelamento` com no mínimo 5 palavras (custom rule `PalavrasMinimas`).
+
+### 18.4 Policy
+
+- `ReservaPolicy`:
+  - `aprovar(User $u, Reserva $r)` → `$u->podeAprovarReserva($r) && $r->status === 'pendente'`.
+  - `cancelar(User $u, Reserva $r)` → `$u->podeAprovarReserva($r) || $r->user_id === $u->id` (o próprio dono também pode cancelar a sua reserva).
+- `LocalPolicy`:
+  - `attachGerentes` → só admin.
+
+### 18.5 Frontend
+
+- `Admin.jsx` (`LocalForm`):
+  - Toggle **"Requer aprovação"** ligado ao campo `requer_aprovacao`.
+  - Multi-select de usuários gerentes (fetch em `base44.entities.User.list()`), gravado via novo endpoint `PUT /api/locais/{id}/gerentes` ou dentro do próprio `update` (payload `{ ..., gerentes: [id1, id2] }`).
+- Nova aba **"Pendentes"** no `Admin.jsx` para gerentes / admin:
+  - Lista `GET /api/reservas/pendentes`.
+  - Botões **Aprovar** e **Cancelar** (Cancelar abre modal para preencher motivo).
+- `MinhasReservas.jsx`: mostrar badge do status (`pendente/confirmada/cancelada`) — hoje já mostra status, apenas garantir que o campo `motivo_cancelamento` apareça quando presente.
+- `base44Client.js`:
+  ```js
+  Reserva.aprovar = (id) => request("PATCH", `/reservas/${id}/aprovar`);
+  Reserva.cancelar = (id, motivo_cancelamento) =>
+    request("PATCH", `/reservas/${id}/cancelar`, { motivo_cancelamento });
+  Reserva.pendentes = () => request("GET", "/reservas/pendentes");
+  ```
+
+### 18.6 Testes
+
+- `Feature/Locais/GerentesTest.php`: attach/detach; só admin altera; `temGerente()` true/false.
+- `Feature/Reservas/AprovacaoTest.php`:
+  - Local com `requer_aprovacao=true` → nova reserva nasce `pendente`.
+  - Local sem toggle → nova reserva nasce `confirmada`.
+  - Gerente aprova → status vira `confirmada`, `aprovada_por_id` preenchido.
+  - Não-gerente tenta aprovar → 403.
+  - Aprovar reserva já `confirmada` → 422.
+- `Feature/Reservas/CancelamentoTest.php`:
+  - Sem `motivo_cancelamento` → 422.
+  - Motivo com menos de 5 palavras → 422.
+  - Dono da reserva pode cancelar a sua; outro usuário sem ser gerente → 403.
+  - Reserva cancelada libera o slot (`conflitos()` já ignora status=`cancelada`, revalidar).
+
+### 18.7 Fechamento da Fase 8
+
+- Testes verdes → `cd front && npm run build` → commit `feat(fase-8): aprovação de reservas + gerentes de Local` → **push**.
+
+---
+
+## 19. Fase 9 — Notificações por Email
+
+### 19.1 Configuração de fila e mail
+
+- `.env` dev:
+  ```
+  MAIL_MAILER=log
+  QUEUE_CONNECTION=database
+  ```
+- `.env.production.example`:
+  ```
+  MAIL_MAILER=smtp
+  MAIL_HOST=smtp.hostinger.com
+  MAIL_PORT=465
+  MAIL_ENCRYPTION=ssl
+  MAIL_USERNAME=agendas@seu-dominio
+  MAIL_PASSWORD=...
+  MAIL_FROM_ADDRESS=agendas@seu-dominio
+  MAIL_FROM_NAME="Agendas UFVJM"
+  QUEUE_CONNECTION=database
+  ```
+- Tabela `jobs` já existe (`0001_01_01_000002_create_jobs_table.php`) — verificar.
+- Publicar/registrar worker: `php artisan queue:work --tries=3` (rodar via `supervisord`/cron a cada minuto na Hostinger: `php artisan queue:work --stop-when-empty`).
+
+### 19.2 Mailables e Notifications
+
+Preferir **Notifications** (`php artisan make:notification ReservaCriada` etc.) para poder enviar por múltiplos canais no futuro.
+
+- `App\Notifications\ReservaCriada` (para dono, gerentes e responsáveis de recurso).
+- `App\Notifications\ReservaAprovada` (para dono).
+- `App\Notifications\ReservaCancelada` (para dono e gerentes) — recebe `$motivo`.
+
+Todas devem implementar `ShouldQueue`.
+
+### 19.3 Disparo
+
+- Observer `App\Observers\ReservaObserver`:
+  - `created`: notifica dono + gerentes do Local + (Fase 12) responsáveis dos Recursos escolhidos.
+  - `updated`: se `status` mudou para `confirmada` via aprovação → notifica dono.
+  - `updated`: se `status` mudou para `cancelada` → notifica dono e gerentes com o `motivo_cancelamento`.
+- Registrar em `EventServiceProvider` (`Reserva::observe(ReservaObserver::class)`).
+
+### 19.4 Frontend
+
+- Modal **"Cancelar reserva"** com campo `motivo_cancelamento` (Textarea, min 5 palavras, contador live).
+- Feedback UI: toast "Cancelamento notificado por email."
+- Nenhum novo endpoint no `base44Client.js` além dos criados na Fase 8.
+
+### 19.5 Testes
+
+- `Feature/Notifications/ReservaCriadaTest.php`:
+  - `Mail::fake()` / `Notification::fake()`.
+  - Cria reserva → notifica dono + cada gerente do Local.
+  - Local sem `requer_aprovacao` → mesma notificação (é criação, independe de aprovação).
+- `Feature/Notifications/ReservaAprovadaTest.php`: só notifica quando `status` transita de `pendente` para `confirmada`.
+- `Feature/Notifications/ReservaCanceladaTest.php`: dono e gerentes recebem; conteúdo contém o motivo.
+
+### 19.6 Fechamento
+
+- Testes verdes → `npm run build` → commit `feat(fase-9): notificações por email (criação, aprovação, cancelamento)` → **push**.
+
+---
+
+## 20. Fase 10 — Períodos (Semestres)
+
+### 20.1 Migration `periodos`
+
+- `id`, `nome` (ex.: "2026/1"), `data_inicio` (date), `data_fim` (date), `status` (`ativo`/`inativo`, default `ativo`), timestamps.
+- Regra: `data_fim >= data_inicio` (validação).
+
+### 20.2 Model, FormRequest, Controller, Policy
+
+- `PeriodoPolicy`: `viewAny`/`view` público; `create/update/delete` só admin.
+- Rotas:
+  ```
+  GET    /api/periodos                (público)
+  POST   /api/periodos                (admin)
+  PUT    /api/periodos/{periodo}      (admin)
+  DELETE /api/periodos/{periodo}      (admin)
+  ```
+
+### 20.3 Frontend
+
+- `Admin.jsx`: nova seção **"Períodos"** com CRUD (padrão do `AdminTable` já existente).
+- `ReservationModal.jsx`: acima dos campos de data, faixa de **botões "Semestre"**:
+  - Renderiza `periodos.filter(p => p.status === 'ativo')`.
+  - Ao clicar, `setForm({ ..., data_inicial: p.data_inicio, data_fim: p.data_fim })`.
+- `base44Client.js`: `entities.Periodo = makeEntity("periodos")`.
+
+### 20.4 Testes
+
+- `Feature/Periodos/CrudTest.php`: admin/usuário; validação de datas.
+- `Feature/Periodos/PublicListTest.php`: sem token → 200.
+
+### 20.5 Fechamento
+
+- Testes verdes → `npm run build` → commit `feat(fase-10): períodos (semestres) e botão de pré-preenchimento` → **push**.
+
+---
+
+## 21. Fase 11 — Indisponibilidades de Local
+
+Objetivo: permitir marcar que o Local **não pode ser reservado** em determinados momentos (feriado, férias, dia da semana fixo, faixa horária recorrente).
+
+### 21.1 Migration `local_indisponibilidades`
+
+- `id`.
+- `local_id` FK cascadeOnDelete.
+- `tipo` string — `data_especifica` | `periodo` | `recorrente_semanal`.
+- `data_inicial` date nullable, `data_final` date nullable.
+- `dias_semana` json nullable (array `[0..6]`, 0=Domingo).
+- `horario_inicial` time nullable, `horario_final` time nullable (null significa "dia inteiro").
+- `motivo` string nullable.
+- timestamps.
+- Índice `(local_id)`.
+
+### 21.2 Regras
+
+- `data_especifica`: usa `data_inicial` (single day). Se `horario_*` nulls → dia todo.
+- `periodo`: usa `data_inicial` + `data_final`. Se `horario_*` nulls → dias todos.
+- `recorrente_semanal`: usa `dias_semana` + `horario_*` (sem datas). Aplica-se indefinidamente.
+- Regras validadas no FormRequest (`required_if` por tipo).
+
+### 21.3 Ajuste em `Reserva::conflitos()`
+
+Estender para também rejeitar reservas que sobreponham qualquer registro de `local_indisponibilidades`. Alternativa mais limpa: criar `LocalIndisponibilidade::conflita(...)` e chamar antes de criar/atualizar.
+
+### 21.4 Endpoints
+
+```
+GET    /api/locais/{local}/indisponibilidades          (público, para o front bloquear na UI)
+POST   /api/locais/{local}/indisponibilidades          (admin ou gerente do Local)
+PUT    /api/indisponibilidades/{indisponibilidade}     (admin ou gerente)
+DELETE /api/indisponibilidades/{indisponibilidade}     (admin ou gerente)
+```
+
+### 21.5 Frontend
+
+- `Admin.jsx` → `LocalForm`: aba **"Indisponibilidades"** com sub-CRUD (usar tabs do shadcn/ui).
+- `Agenda.jsx`: pintar dias/horas indisponíveis em cinza + tooltip com `motivo`.
+- `base44Client.js`: `entities.LocalIndisponibilidade = makeEntity("indisponibilidades")` e helper `Local.indisponibilidades(id)`.
+
+### 21.6 Testes
+
+- `Feature/Locais/IndisponibilidadeCrudTest.php`.
+- `Feature/Reservas/ConflitoComIndisponibilidadeTest.php`:
+  - Feriado (data_especifica) → reserva no dia falha 422.
+  - Recorrente domingo → reserva de domingo falha 422; segunda passa.
+  - Faixa horária 22h-6h → reserva 23h-1h falha; 14h-16h passa.
+
+### 21.7 Fechamento
+
+- Testes verdes → `npm run build` → commit `feat(fase-11): indisponibilidades de Local (feriados, faixas, dias)` → **push**.
+
+---
+
+## 22. Fase 12 — Cadastro de Recursos + vínculo com Reservas
+
+### 22.1 Migrations
+
+- `create_recursos_table`:
+  - `id`.
+  - `nome` string (ex.: "Som", "Copa", "Técnico de Lab").
+  - `responsavel_nome` string.
+  - `responsavel_email` string.
+  - `quantidade` unsignedInteger default 1.
+  - `status` string default `ativo`.
+  - timestamps.
+- `create_recurso_disponibilidades_table` (mesmo formato de `local_indisponibilidades` porém no sentido oposto — descreve **quando o recurso ESTÁ disponível**):
+  - `id`.
+  - `recurso_id` FK cascadeOnDelete.
+  - `dias_semana` json (ex.: `[1,2,3,4,5]` = seg-sex).
+  - `horario_inicial` time, `horario_final` time.
+  - Um recurso pode ter várias linhas (ex.: 08:00-12:00 e 14:00-18:00, seg-sex; 10:00-13:00 no domingo).
+- `create_reserva_recurso_table` (pivot):
+  - `reserva_id`, `recurso_id`, `quantidade` unsignedInteger default 1.
+  - Primary composta `(reserva_id, recurso_id)`.
+
+### 22.2 Models
+
+- `Recurso` com relação `disponibilidades()` (HasMany), `reservas()` (BelongsToMany pivot com `quantidade`).
+- `RecursoDisponibilidade`.
+- `Reserva.recursos(): BelongsToMany` com `withPivot('quantidade')`.
+
+### 22.3 Regra de disponibilidade
+
+Ao criar/atualizar reserva com recursos:
+
+1. Para cada `recurso_id + quantidade` do payload:
+   - Verificar se **existe pelo menos uma janela** em `recurso_disponibilidades` que cobre o(s) dia(s) da semana das datas da reserva **e** contém `[horario_inicial, horario_final]`.
+   - Se não cobre → 422 `"Recurso X não disponível neste horário."`.
+2. Verificar **soma da quantidade** já reservada no mesmo intervalo:
+   - `SUM(reserva_recurso.quantidade)` das reservas ativas (status ≠ cancelada) que se sobrepõem em data+hora.
+   - Se `soma + quantidade_pedida > recurso.quantidade` → 422 `"Recurso X esgotado neste horário."`.
+
+Encapsular em `RecursoDisponibilidadeService::verificar(int $recursoId, int $qtd, string $di, string $df, string $hi, string $hf, ?int $ignorarReservaId = null)`.
+
+### 22.4 Endpoints
+
+```
+GET    /api/recursos                    (auth: qualquer usuário logado)
+POST   /api/recursos                    (admin)
+PUT    /api/recursos/{recurso}          (admin)
+DELETE /api/recursos/{recurso}          (admin)
+GET    /api/recursos/{recurso}/agenda   (só responsável — email match — ou admin)
+POST   /api/recursos/{recurso}/verificar-disponibilidade   (usado pela UI ao escolher recurso na reserva)
+```
+
+Extensão em `POST /api/reservas` e `POST /api/reservas/bulk`: aceitar `recursos: [{ id, quantidade }]`.
+
+### 22.5 Notificações (integra Fase 9)
+
+- Ao criar reserva com recursos → `ReservaCriada` também dispara para cada `responsavel_email` dos recursos escolhidos.
+- Ao aprovar/cancelar reserva → também notifica os responsáveis dos recursos vinculados.
+- Adicionar rota `mail(to: [$dono, ...$gerentes, ...$responsaveisRecursos])` no observer.
+
+### 22.6 Agenda do Responsável
+
+- Endpoint `/api/recursos/{id}/agenda` retorna reservas ativas do recurso (com dono, local, datas, horários).
+- **Auth**: só admin ou usuário cujo `email === recurso.responsavel_email`. Como o responsável pode não ter conta, fornecer alternativa: **link mágico** enviado por email trimestralmente **fora do escopo desta fase**; por ora, exigir conta e match de email.
+
+### 22.7 Frontend
+
+- `Admin.jsx`: nova seção **"Recursos"** com CRUD + sub-CRUD de disponibilidades (grade de dias × faixas horárias, similar ao `RecurringDaysPicker`).
+- `ReservationModal.jsx`: bloco **"Recursos"** com multi-seleção (checkbox + input de quantidade). Antes de enviar, chamar `verificar-disponibilidade` para feedback rápido.
+- Nova página `AgendaRecurso.jsx` (rota `/recursos/:id/agenda`) para o responsável.
+- `base44Client.js`:
+  ```js
+  entities.Recurso = makeEntity("recursos");
+  entities.Recurso.disponibilidade = (id, payload) =>
+    request("POST", `/recursos/${id}/verificar-disponibilidade`, payload);
+  entities.Recurso.agenda = (id) => request("GET", `/recursos/${id}/agenda`);
+  ```
+
+### 22.8 Testes
+
+- `Feature/Recursos/CrudTest.php`.
+- `Feature/Recursos/DisponibilidadeTest.php`:
+  - Fora da janela semanal → falha.
+  - Dentro da janela mas quantidade esgotada → falha.
+  - Cabe → sucesso.
+- `Feature/Recursos/AgendaTest.php`:
+  - Responsável (email match) vê → 200.
+  - Outro usuário → 403.
+- `Feature/Reservas/ReservaComRecursoTest.php`:
+  - Bulk com um recurso indisponível → rollback completo.
+
+### 22.9 Fechamento
+
+- Testes verdes → `npm run build` → commit `feat(fase-12): cadastro de recursos e vínculo com reservas` → **push**.
+
+---
+
+## 23. Impacto no Wrapper `base44Client.js`
+
+Resumo das novas entidades/métodos a serem expostos (mantendo o mesmo estilo):
+
+```js
+entities.Periodo = makeEntity("periodos");
+entities.Recurso = makeEntity("recursos");
+entities.LocalIndisponibilidade = makeEntity("indisponibilidades");
+
+Reserva.aprovar   = (id) => request("PATCH", `/reservas/${id}/aprovar`);
+Reserva.cancelar  = (id, motivo_cancelamento) => request("PATCH", `/reservas/${id}/cancelar`, { motivo_cancelamento });
+Reserva.pendentes = () => request("GET", "/reservas/pendentes");
+
+Local.gerentes            = (id) => request("GET",  `/locais/${id}/gerentes`);
+Local.setGerentes         = (id, userIds) => request("PUT", `/locais/${id}/gerentes`, { user_ids: userIds });
+Local.indisponibilidades  = (id) => request("GET", `/locais/${id}/indisponibilidades`);
+
+Recurso.disponibilidade = (id, payload) => request("POST", `/recursos/${id}/verificar-disponibilidade`, payload);
+Recurso.agenda          = (id) => request("GET", `/recursos/${id}/agenda`);
+```
+
+---
+
+## 24. Ordem Definitiva (Fases 8–12)
+
+| Fase | Objetivo                                                            | Commit final                                                       |
+| ---- | ------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 8    | Aprovação de reservas + gerentes de Local                           | `feat(fase-8): aprovação de reservas + gerentes de Local`          |
+| 9    | Notificações por email (criação, aprovação, cancelamento com motivo) | `feat(fase-9): notificações por email`                            |
+| 10   | Períodos (semestres) + botão de pré-preenchimento                    | `feat(fase-10): períodos (semestres)`                              |
+| 11   | Indisponibilidades de Local                                          | `feat(fase-11): indisponibilidades de Local`                       |
+| 12   | Recursos + vínculo com reservas + agenda do responsável              | `feat(fase-12): cadastro de recursos e vínculo com reservas`       |
+
+Fases 8 e 9 têm dependência forte (email de aprovação/cancelamento pressupõe o fluxo da fase 8). Fase 12 depende da fase 9 para notificar responsáveis dos recursos. Fases 10 e 11 são independentes entre si e podem ser trocadas de ordem se conveniente.
+
+---
+
+## 25. Novos Pontos de Atenção
+
+- **Fila (`queue:work`) na Hostinger**: shared hosting não roda daemon; alternativa é agendar `* * * * * php artisan queue:work --stop-when-empty --max-time=50` no cron do painel. Documentar no `deploy.sh`.
+- **`MAIL_FROM_ADDRESS`** precisa ser um endereço criado no painel da Hostinger, senão os emails caem em spam. Preferir DKIM/SPF já configurados.
+- **Dono da reserva pode cancelar a própria** (fase 8) — mas quem aprova é sempre gerente/admin.
+- **Recursos vs Locais**: recurso NÃO é local — não bloqueia a agenda do Local, apenas verifica se o recurso escolhido está livre. Um mesmo dia/horário no mesmo Local só pode ter uma reserva; um mesmo dia/horário pode consumir várias unidades do mesmo recurso, desde que respeite `recurso.quantidade`.
+- **Responsável de Recurso sem conta**: cobrir em fase futura (link mágico ou registro implícito). Por ora, exigir que o email do responsável corresponda a um `users.email`.
+- **Retrocompatibilidade**: reservas criadas antes da fase 8 ficam com `status='confirmada'`, `aprovada_por_id=null`, sem `motivo_cancelamento` — comportamento aceitável (não retroativo).

@@ -129,13 +129,22 @@ function makeEntity(path) {
 
 const Reserva = makeEntity("reservas");
 Reserva.bulkCreate = (items) => request("POST", "/reservas/bulk", { reservas: items });
+Reserva.aprovar = (id) => request("PATCH", `/reservas/${id}/aprovar`);
+Reserva.cancelar = (id, motivo_cancelamento) =>
+  request("PATCH", `/reservas/${id}/cancelar`, { motivo_cancelamento });
+Reserva.pendentes = () => request("GET", "/reservas/pendentes");
+
+const Local = makeEntity("locais");
+Local.gerentes = (id) => request("GET", `/locais/${id}/gerentes`);
+Local.setGerentes = (id, userIds) =>
+  request("PUT", `/locais/${id}/gerentes`, { user_ids: userIds });
 
 export const base44 = {
   auth,
   entities: {
     Campi: makeEntity("campi"),
     Grupo: makeEntity("grupos"),
-    Local: makeEntity("locais"),
+    Local,
     Reserva,
     User: makeEntity("users"),
   },

@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\BulkStoreReservaRequest;
+use App\Http\Requests\Api\CancelarReservaRequest;
 use App\Http\Requests\Api\StoreReservaRequest;
 use App\Http\Requests\Api\UpdateReservaRequest;
+use App\Models\Local;
 use App\Models\Reserva;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -36,12 +38,30 @@ class ReservaController extends Controller
         return JsonResource::collection($query->orderByDesc('data_inicial')->get());
     }
 
+    public function pendentes(Request $request): JsonResource
+    {
+        $user = $request->user();
+        $query = Reserva::query()->pendentes();
+
+        if (! $user->isAdmin()) {
+            $ids = $user->locaisGerenciados()->pluck('locais.id');
+            $query->whereIn('local_id', $ids);
+        }
+
+        return JsonResource::collection($query->orderBy('data_inicial')->get());
+    }
+
     public function store(StoreReservaRequest $request): JsonResponse
     {
         $this->authorize('create', Reserva::class);
 
         $data = $request->validated();
         $data['user_id'] = $request->user()->id;
+
+        $local = Local::findOrFail($data['local_id']);
+        if (! array_key_exists('status', $data) || $data['status'] === null) {
+            $data['status'] = $local->requer_aprovacao ? 'pendente' : 'confirmada';
+        }
 
         $reserva = Reserva::create($data);
 
@@ -75,6 +95,12 @@ class ReservaController extends Controller
                     }
 
                     $data['user_id'] = $userId;
+
+                    $local = Local::findOrFail($data['local_id']);
+                    if (! array_key_exists('status', $data) || $data['status'] === null) {
+                        $data['status'] = $local->requer_aprovacao ? 'pendente' : 'confirmada';
+                    }
+
                     $created[] = Reserva::create($data);
                 }
             });
@@ -102,6 +128,33 @@ class ReservaController extends Controller
         $this->authorize('update', $reserva);
 
         $reserva->update($request->validated());
+
+        return new JsonResource($reserva->fresh());
+    }
+
+    public function aprovar(Request $request, Reserva $reserva): JsonResource
+    {
+        $this->authorize('aprovar', $reserva);
+
+        $reserva->update([
+            'status' => 'confirmada',
+            'aprovada_por_id' => $request->user()->id,
+            'aprovada_em' => now(),
+        ]);
+
+        return new JsonResource($reserva->fresh());
+    }
+
+    public function cancelar(CancelarReservaRequest $request, Reserva $reserva): JsonResource
+    {
+        $this->authorize('cancelar', $reserva);
+
+        $reserva->update([
+            'status' => 'cancelada',
+            'motivo_cancelamento' => $request->validated('motivo_cancelamento'),
+            'cancelada_por_id' => $request->user()->id,
+            'cancelada_em' => now(),
+        ]);
 
         return new JsonResource($reserva->fresh());
     }

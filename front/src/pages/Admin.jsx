@@ -10,7 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Building2, Layers, MapPin, CalendarCheck, TrendingUp, Clock, LayoutDashboard, Users, BarChart3, Settings, Plus, Pencil, Trash2, Search, Tag } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Building2, Layers, MapPin, CalendarCheck, TrendingUp, Clock, LayoutDashboard, Users, BarChart3, Settings, Plus, Pencil, Trash2, Search, Tag, ClipboardList, CheckCircle2, XCircle } from "lucide-react";
 import { TIPOS_LOCAL, getCorTipo } from "@/lib/tiposLocal";
 
 const SECTIONS = [
@@ -20,6 +22,7 @@ const SECTIONS = [
   { key: "locais", label: "Locais", icon: MapPin },
   { key: "tipos", label: "Tipos de Local", icon: Tag },
   { key: "reservas", label: "Reservas", icon: CalendarCheck },
+  { key: "pendentes", label: "Pendentes", icon: ClipboardList },
   { key: "usuarios", label: "Usuários", icon: Users },
   { key: "relatorios", label: "Relatórios", icon: BarChart3 },
   { key: "config", label: "Configurações", icon: Settings },
@@ -209,9 +212,12 @@ export default function Admin() {
               onAdd={() => { setEditItem(null); setModalOpen(true); }}
               onEdit={(item) => { setEditItem(item); setModalOpen(true); }}
               onDelete={(item) => base44.entities.Local.delete(item.id).then(loadAll)}
-              renderForm={() => <LocalForm item={editItem} campi={campi} grupos={grupos} onSaved={() => { setModalOpen(false); loadAll(); }} />}
+              renderForm={() => <LocalForm item={editItem} campi={campi} grupos={grupos} users={users} onSaved={() => { setModalOpen(false); loadAll(); }} />}
               modalOpen={modalOpen} setModalOpen={setModalOpen}
             />
+          )}
+          {section === "pendentes" && (
+            <PendentesSection users={users} locais={locais} onChanged={loadAll} />
           )}
           {section === "tipos" && (
             <div>
@@ -409,14 +415,31 @@ function GrupoForm({ item, campi, onSaved }) {
   );
 }
 
-function LocalForm({ item, campi, grupos, onSaved }) {
-  const [form, setForm] = useState(item || { nome: "", campi_id: "", grupo_id: "", tipo: "Sala de aula", capacidade: 0, descricao: "", recursos: "", status: "ativo" });
+function LocalForm({ item, campi, grupos, users, onSaved }) {
+  const initial = item || { nome: "", campi_id: "", grupo_id: "", tipo: "Sala de aula", capacidade: 0, descricao: "", recursos: "", status: "ativo", requer_aprovacao: false };
+  const [form, setForm] = useState({ ...initial, requer_aprovacao: !!initial.requer_aprovacao });
+  const [gerentesIds, setGerentesIds] = useState([]);
   const gruposFiltrados = grupos.filter((g) => g.campi_id === form.campi_id);
+
+  useEffect(() => {
+    if (!item?.id) { setGerentesIds([]); return; }
+    base44.entities.Local.gerentes(item.id).then((list) => {
+      setGerentesIds((list || []).map((u) => String(u.id)));
+    }).catch(() => setGerentesIds([]));
+  }, [item?.id]);
+
+  const toggleGerente = (id) => {
+    const s = String(id);
+    setGerentesIds((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]);
+  };
+
   const save = async () => {
-    if (item?.id) await base44.entities.Local.update(item.id, form);
-    else await base44.entities.Local.create(form);
+    const payload = { ...form, gerentes: gerentesIds.map((i) => parseInt(i, 10)) };
+    if (item?.id) await base44.entities.Local.update(item.id, payload);
+    else await base44.entities.Local.create(payload);
     onSaved();
   };
+
   return (
     <div className="space-y-3">
       <div><Label>Nome *</Label><Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /></div>
@@ -437,7 +460,132 @@ function LocalForm({ item, campi, grupos, onSaved }) {
       <div><Label>Descrição</Label><Textarea value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} rows={2} /></div>
       <div><Label>Recursos</Label><Input value={form.recursos} onChange={(e) => setForm({ ...form, recursos: e.target.value })} placeholder="Projetor, Ar condicionado..." /></div>
       <div><Label>Status</Label><Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ativo">Ativo</SelectItem><SelectItem value="inativo">Inativo</SelectItem></SelectContent></Select></div>
+
+      <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
+        <div>
+          <Label className="text-sm font-medium text-slate-800">Requer aprovação</Label>
+          <p className="text-xs text-slate-500">Novas reservas ficam pendentes até um gerente aprovar.</p>
+        </div>
+        <Switch checked={!!form.requer_aprovacao} onCheckedChange={(v) => setForm({ ...form, requer_aprovacao: v })} />
+      </div>
+
+      <div>
+        <Label>Gerentes do local</Label>
+        <p className="mb-2 text-xs text-slate-500">Só gerentes (e admin) podem aprovar ou cancelar reservas deste local.</p>
+        <div className="max-h-40 space-y-1 overflow-auto rounded-lg border border-slate-200 p-2">
+          {(users || []).length === 0 && <p className="p-2 text-xs text-slate-400">Nenhum usuário cadastrado.</p>}
+          {(users || []).map((u) => (
+            <label key={u.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-slate-50">
+              <Checkbox checked={gerentesIds.includes(String(u.id))} onCheckedChange={() => toggleGerente(u.id)} />
+              <span className="text-sm text-slate-700">{u.full_name || u.email}</span>
+              <span className="ml-auto text-xs text-slate-400">{u.email}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
       <DialogFooter><Button variant="outline" onClick={onSaved}>Cancelar</Button><Button className="bg-blue-600" onClick={save}>Salvar</Button></DialogFooter>
+    </div>
+  );
+}
+
+function PendentesSection({ users, locais, onChanged }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [motivo, setMotivo] = useState("");
+
+  const load = () => {
+    setLoading(true);
+    base44.entities.Reserva.pendentes().then((list) => {
+      setItems(list || []);
+      setLoading(false);
+    }).catch(() => { setItems([]); setLoading(false); });
+  };
+  useEffect(() => { load(); }, []);
+
+  const aprovar = async (id) => {
+    await base44.entities.Reserva.aprovar(id);
+    load(); onChanged?.();
+  };
+  const confirmarCancelar = async () => {
+    if (!cancelTarget) return;
+    const palavras = motivo.trim().split(/\s+/).filter(Boolean).length;
+    if (palavras < 5) return;
+    try {
+      await base44.entities.Reserva.cancelar(cancelTarget.id, motivo);
+      setCancelTarget(null); setMotivo("");
+      load(); onChanged?.();
+    } catch (e) {
+      alert(e?.data?.message || "Falha ao cancelar.");
+    }
+  };
+
+  const nomeUsuario = (id) => users.find((u) => String(u.id) === String(id))?.full_name || "—";
+  const nomeLocal = (id) => locais.find((l) => String(l.id) === String(id))?.nome || "—";
+
+  return (
+    <div>
+      <h1 className="mb-1 text-2xl font-bold text-slate-900">Pendentes</h1>
+      <p className="mb-6 text-sm text-slate-500">Reservas aguardando aprovação dos gerentes de cada local.</p>
+      {loading ? (
+        <p className="text-sm text-slate-400">Carregando...</p>
+      ) : items.length === 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">Nenhuma reserva pendente no momento.</div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-slate-400">
+              <tr>
+                <th className="px-4 py-3 text-left font-semibold">Título</th>
+                <th className="px-4 py-3 text-left font-semibold">Local</th>
+                <th className="px-4 py-3 text-left font-semibold">Data</th>
+                <th className="px-4 py-3 text-left font-semibold">Horário</th>
+                <th className="px-4 py-3 text-left font-semibold">Solicitante</th>
+                <th className="px-4 py-3 text-right font-semibold">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((r) => (
+                <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50">
+                  <td className="px-4 py-3 text-slate-700">{r.titulo}</td>
+                  <td className="px-4 py-3 text-slate-600">{nomeLocal(r.local_id)}</td>
+                  <td className="px-4 py-3 text-slate-600">{format(parseISO(r.data_inicial), "dd/MM/yyyy")}</td>
+                  <td className="px-4 py-3 text-slate-600">{String(r.horario_inicial).slice(0, 5)} — {String(r.horario_final).slice(0, 5)}</td>
+                  <td className="px-4 py-3 text-slate-600">{nomeUsuario(r.user_id)}</td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => aprovar(r.id)}>
+                        <CheckCircle2 className="h-4 w-4" /> Aprovar
+                      </Button>
+                      <Button size="sm" variant="outline" className="border-red-200 text-red-600 hover:bg-red-50" onClick={() => { setCancelTarget(r); setMotivo(""); }}>
+                        <XCircle className="h-4 w-4" /> Cancelar
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Dialog open={!!cancelTarget} onOpenChange={(o) => { if (!o) { setCancelTarget(null); setMotivo(""); } }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Cancelar reserva</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">Informe o motivo do cancelamento (mínimo 5 palavras). O solicitante será notificado.</p>
+            <Textarea rows={4} value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Descreva por que a reserva está sendo cancelada..." />
+            <p className="text-xs text-slate-400">
+              {motivo.trim().split(/\s+/).filter(Boolean).length} palavra(s)
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setCancelTarget(null); setMotivo(""); }}>Voltar</Button>
+            <Button className="bg-red-600 hover:bg-red-700" onClick={confirmarCancelar}>Confirmar cancelamento</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

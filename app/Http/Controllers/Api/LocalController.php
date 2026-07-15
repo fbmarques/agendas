@@ -33,9 +33,17 @@ class LocalController extends Controller
     {
         $this->authorize('create', Local::class);
 
-        $local = Local::create($request->validated());
+        $data = $request->validated();
+        $gerentes = $data['gerentes'] ?? null;
+        unset($data['gerentes']);
 
-        return response()->json($local, 201);
+        $local = Local::create($data);
+
+        if (is_array($gerentes)) {
+            $local->gerentes()->sync($gerentes);
+        }
+
+        return response()->json($local->fresh(), 201);
     }
 
     public function show(Local $local): JsonResource
@@ -47,9 +55,36 @@ class LocalController extends Controller
     {
         $this->authorize('update', $local);
 
-        $local->update($request->validated());
+        $data = $request->validated();
+        $gerentes = $data['gerentes'] ?? null;
+        unset($data['gerentes']);
+
+        $local->update($data);
+
+        if (is_array($gerentes)) {
+            $local->gerentes()->sync($gerentes);
+        }
 
         return new JsonResource($local->fresh());
+    }
+
+    public function gerentes(Local $local): JsonResource
+    {
+        return JsonResource::collection($local->gerentes()->orderBy('full_name')->get());
+    }
+
+    public function setGerentes(Request $request, Local $local): JsonResource
+    {
+        $this->authorize('update', $local);
+
+        $data = $request->validate([
+            'user_ids' => ['required', 'array'],
+            'user_ids.*' => ['integer', 'exists:users,id'],
+        ]);
+
+        $local->gerentes()->sync($data['user_ids']);
+
+        return JsonResource::collection($local->gerentes()->orderBy('full_name')->get());
     }
 
     public function destroy(Local $local): JsonResponse

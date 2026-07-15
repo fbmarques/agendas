@@ -38,6 +38,9 @@ class UpdateLocalRequest extends FormRequest
             'descricao' => ['nullable', 'string'],
             'recursos' => ['nullable', 'string', 'max:255'],
             'status' => ['nullable', 'in:ativo,inativo'],
+            'requer_aprovacao' => ['sometimes', 'boolean'],
+            'gerentes' => ['sometimes', 'array'],
+            'gerentes.*' => ['integer', 'exists:users,id'],
         ];
     }
 }

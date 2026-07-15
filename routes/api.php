@@ -23,6 +23,11 @@ Route::prefix('auth')->group(function () {
     });
 });
 
+// Rotas de coleção específicas (precisam vir antes das rotas com {parâmetro})
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('reservas/pendentes', [ReservaController::class, 'pendentes']);
+});
+
 // Leitura pública (Home, CampiDetail)
 Route::get('campi', [CampiController::class, 'index']);
 Route::get('campi/{campi}', [CampiController::class, 'show']);
@@ -30,6 +35,7 @@ Route::get('grupos', [GrupoController::class, 'index']);
 Route::get('grupos/{grupo}', [GrupoController::class, 'show']);
 Route::get('locais', [LocalController::class, 'index']);
 Route::get('locais/{local}', [LocalController::class, 'show']);
+Route::get('locais/{local}/gerentes', [LocalController::class, 'gerentes']);
 Route::get('reservas', [ReservaController::class, 'index']);
 Route::get('reservas/{reserva}', [ReservaController::class, 'show']);
 
@@ -48,12 +54,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('locais', [LocalController::class, 'store']);
     Route::put('locais/{local}', [LocalController::class, 'update']);
     Route::patch('locais/{local}', [LocalController::class, 'update']);
+    Route::put('locais/{local}/gerentes', [LocalController::class, 'setGerentes']);
     Route::delete('locais/{local}', [LocalController::class, 'destroy']);
 
     Route::get('users', [UserController::class, 'index']);
     Route::get('minhas-reservas', [ReservaController::class, 'minhas']);
     Route::post('reservas', [ReservaController::class, 'store']);
     Route::post('reservas/bulk', [ReservaController::class, 'bulk']);
+    Route::patch('reservas/{reserva}/aprovar', [ReservaController::class, 'aprovar']);
+    Route::patch('reservas/{reserva}/cancelar', [ReservaController::class, 'cancelar']);
     Route::put('reservas/{reserva}', [ReservaController::class, 'update']);
     Route::patch('reservas/{reserva}', [ReservaController::class, 'update']);
     Route::delete('reservas/{reserva}', [ReservaController::class, 'destroy']);
