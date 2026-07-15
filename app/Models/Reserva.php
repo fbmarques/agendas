@@ -94,4 +94,24 @@ class Reserva extends Model
             ->where('horario_final', '>', $horarioInicial)
             ->when($ignorarId, fn ($q) => $q->where('id', '!=', $ignorarId));
     }
+
+    /**
+     * Retorna a primeira indisponibilidade cadastrada que bloqueia a janela,
+     * ou null se o local está livre neste intervalo.
+     */
+    public static function indisponibilidadeQueBloqueia(
+        int $localId,
+        string $dataInicial,
+        string $dataFinal,
+        string $horarioInicial,
+        string $horarioFinal,
+    ): ?LocalIndisponibilidade {
+        $lis = LocalIndisponibilidade::where('local_id', $localId)->get();
+        foreach ($lis as $li) {
+            if ($li->conflitaCom($dataInicial, $dataFinal, $horarioInicial, $horarioFinal)) {
+                return $li;
+            }
+        }
+        return null;
+    }
 }

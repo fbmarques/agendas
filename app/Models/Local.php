@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable(['nome', 'campi_id', 'grupo_id', 'tipo', 'capacidade', 'descricao', 'recursos', 'status', 'requer_aprovacao'])]
 class Local extends Model
@@ -37,6 +38,11 @@ class Local extends Model
     public function gerentes(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'local_gerentes')->withTimestamps();
+    }
+
+    public function indisponibilidades(): HasMany
+    {
+        return $this->hasMany(LocalIndisponibilidade::class);
     }
 
     public function temGerente(User $user): bool

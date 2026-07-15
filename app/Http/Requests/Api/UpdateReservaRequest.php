@@ -52,6 +52,13 @@ class UpdateReservaRequest extends FormRequest
 
             if ($conflito) {
                 $v->errors()->add('local_id', "Já existe reserva ativa nesse período: {$conflito->titulo}.");
+                return;
+            }
+
+            $indisp = Reserva::indisponibilidadeQueBloqueia($localId, $dataInicial, $dataFinal, $hInicial, $hFinal);
+            if ($indisp) {
+                $motivo = $indisp->motivo ?? 'Local indisponível neste período';
+                $v->errors()->add('local_id', "Local indisponível: {$motivo}.");
             }
         });
     }

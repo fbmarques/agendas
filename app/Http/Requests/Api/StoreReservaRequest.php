@@ -57,6 +57,20 @@ class StoreReservaRequest extends FormRequest
                     'local_id',
                     "Já existe reserva ativa para este local nesse período: {$conflito->titulo}."
                 );
+                return;
+            }
+
+            $indisp = Reserva::indisponibilidadeQueBloqueia(
+                $localId,
+                $this->input('data_inicial'),
+                $this->input('data_final'),
+                $this->input('horario_inicial'),
+                $this->input('horario_final'),
+            );
+
+            if ($indisp) {
+                $motivo = $indisp->motivo ?? 'Local indisponível neste período';
+                $v->errors()->add('local_id', "Local indisponível: {$motivo}.");
             }
         });
     }

@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CampiController;
 use App\Http\Controllers\Api\GrupoController;
 use App\Http\Controllers\Api\LocalController;
+use App\Http\Controllers\Api\LocalIndisponibilidadeController;
 use App\Http\Controllers\Api\PeriodoController;
 use App\Http\Controllers\Api\ReservaController;
 use App\Http\Controllers\Api\UserController;
@@ -37,6 +38,7 @@ Route::get('grupos/{grupo}', [GrupoController::class, 'show']);
 Route::get('locais', [LocalController::class, 'index']);
 Route::get('locais/{local}', [LocalController::class, 'show']);
 Route::get('locais/{local}/gerentes', [LocalController::class, 'gerentes']);
+Route::get('locais/{local}/indisponibilidades', [LocalIndisponibilidadeController::class, 'index']);
 Route::get('reservas', [ReservaController::class, 'index']);
 Route::get('reservas/{reserva}', [ReservaController::class, 'show']);
 Route::get('periodos', [PeriodoController::class, 'index']);
@@ -74,4 +76,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('periodos/{periodo}', [PeriodoController::class, 'update']);
     Route::patch('periodos/{periodo}', [PeriodoController::class, 'update']);
     Route::delete('periodos/{periodo}', [PeriodoController::class, 'destroy']);
+
+    Route::post('locais/{local}/indisponibilidades', [LocalIndisponibilidadeController::class, 'store']);
+    Route::put('indisponibilidades/{indisponibilidade}', [LocalIndisponibilidadeController::class, 'update']);
+    Route::patch('indisponibilidades/{indisponibilidade}', [LocalIndisponibilidadeController::class, 'update']);
+    Route::delete('indisponibilidades/{indisponibilidade}', [LocalIndisponibilidadeController::class, 'destroy']);
 });

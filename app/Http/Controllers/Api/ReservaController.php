@@ -94,6 +94,21 @@ class ReservaController extends Controller
                         ]));
                     }
 
+                    $indisp = Reserva::indisponibilidadeQueBloqueia(
+                        $data['local_id'],
+                        $data['data_inicial'],
+                        $data['data_final'],
+                        $data['horario_inicial'],
+                        $data['horario_final'],
+                    );
+                    if ($indisp) {
+                        $motivo = $indisp->motivo ?? 'Local indisponível';
+                        throw new \RuntimeException(json_encode([
+                            'index' => $index,
+                            'message' => "Item {$index}: {$motivo}.",
+                        ]));
+                    }
+
                     $data['user_id'] = $userId;
 
                     $local = Local::findOrFail($data['local_id']);

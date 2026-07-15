@@ -138,6 +138,13 @@ const Local = makeEntity("locais");
 Local.gerentes = (id) => request("GET", `/locais/${id}/gerentes`);
 Local.setGerentes = (id, userIds) =>
   request("PUT", `/locais/${id}/gerentes`, { user_ids: userIds });
+Local.indisponibilidades = (id) => request("GET", `/locais/${id}/indisponibilidades`);
+Local.criarIndisponibilidade = (id, payload) => request("POST", `/locais/${id}/indisponibilidades`, payload);
+
+const LocalIndisponibilidade = {
+  update: (id, data) => request("PUT", `/indisponibilidades/${id}`, data),
+  delete: (id) => request("DELETE", `/indisponibilidades/${id}`),
+};
 
 export const base44 = {
   auth,
@@ -148,5 +155,6 @@ export const base44 = {
     Reserva,
     User: makeEntity("users"),
     Periodo: makeEntity("periodos"),
+    LocalIndisponibilidade,
   },
 };

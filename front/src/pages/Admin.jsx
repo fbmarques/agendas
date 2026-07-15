@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
+import { TimeInput } from "@/components/ui/time-input";
 import { Building2, Layers, MapPin, CalendarCheck, TrendingUp, Clock, LayoutDashboard, Users, BarChart3, Settings, Plus, Pencil, Trash2, Search, Tag, ClipboardList, CheckCircle2, XCircle } from "lucide-react";
 import { TIPOS_LOCAL, getCorTipo } from "@/lib/tiposLocal";
 
@@ -486,6 +487,8 @@ function LocalForm({ item, campi, grupos, users, onSaved }) {
         <Switch checked={!!form.requer_aprovacao} onCheckedChange={(v) => setForm({ ...form, requer_aprovacao: v })} />
       </div>
 
+      {item?.id && <IndisponibilidadesBlock localId={item.id} />}
+
       <div>
         <Label>Gerentes do local</Label>
         <p className="mb-2 text-xs text-slate-500">Só gerentes (e admin) podem aprovar ou cancelar reservas deste local.</p>
@@ -628,6 +631,113 @@ function PeriodoForm({ item, onSaved }) {
         </Select>
       </div>
       <DialogFooter><Button variant="outline" onClick={onSaved}>Cancelar</Button><Button className="bg-blue-600" onClick={save}>Salvar</Button></DialogFooter>
+    </div>
+  );
+}
+
+function IndisponibilidadesBlock({ localId }) {
+  const DIAS = [
+    { idx: 1, label: "Seg" }, { idx: 2, label: "Ter" }, { idx: 3, label: "Qua" },
+    { idx: 4, label: "Qui" }, { idx: 5, label: "Sex" }, { idx: 6, label: "Sáb" }, { idx: 0, label: "Dom" },
+  ];
+  const [items, setItems] = useState([]);
+  const [form, setForm] = useState({ tipo: "data_especifica", data_inicial: "", data_final: "", dias_semana: [], horario_inicial: "", horario_final: "", motivo: "" });
+
+  const load = () => {
+    base44.entities.Local.indisponibilidades(localId).then((list) => setItems(list || [])).catch(() => setItems([]));
+  };
+  useEffect(() => { load(); }, [localId]);
+
+  const toggleDia = (d) => {
+    setForm((f) => ({ ...f, dias_semana: f.dias_semana.includes(d) ? f.dias_semana.filter((x) => x !== d) : [...f.dias_semana, d] }));
+  };
+
+  const salvar = async () => {
+    const payload = { tipo: form.tipo, motivo: form.motivo || null };
+    if (form.tipo === "data_especifica") payload.data_inicial = form.data_inicial;
+    if (form.tipo === "periodo") { payload.data_inicial = form.data_inicial; payload.data_final = form.data_final; }
+    if (form.tipo === "recorrente_semanal") payload.dias_semana = form.dias_semana;
+    if (form.horario_inicial) payload.horario_inicial = form.horario_inicial;
+    if (form.horario_final) payload.horario_final = form.horario_final;
+    try {
+      await base44.entities.Local.criarIndisponibilidade(localId, payload);
+      setForm({ tipo: "data_especifica", data_inicial: "", data_final: "", dias_semana: [], horario_inicial: "", horario_final: "", motivo: "" });
+      load();
+    } catch (e) {
+      alert(e?.data?.message || "Não foi possível salvar.");
+    }
+  };
+
+  const remover = async (id) => {
+    await base44.entities.LocalIndisponibilidade.delete(id);
+    load();
+  };
+
+  const descreve = (i) => {
+    if (i.tipo === "data_especifica") return `Dia ${i.data_inicial}`;
+    if (i.tipo === "periodo") return `${i.data_inicial} → ${i.data_final}`;
+    if (i.tipo === "recorrente_semanal") return `Semanal: ${(i.dias_semana || []).map((d) => DIAS.find((x) => x.idx === d)?.label).join(", ")}`;
+    return i.tipo;
+  };
+
+  return (
+    <div className="rounded-lg border border-slate-200 p-3">
+      <Label className="text-sm font-medium text-slate-800">Indisponibilidades</Label>
+      <p className="mb-2 text-xs text-slate-500">Feriados, faixas horárias ou dias fixos em que o local não pode ser reservado.</p>
+
+      <div className="mb-3 space-y-1 text-xs">
+        {items.length === 0 && <p className="text-slate-400">Nenhuma indisponibilidade cadastrada.</p>}
+        {items.map((i) => (
+          <div key={i.id} className="flex items-center gap-2 rounded border border-slate-100 bg-slate-50 px-2 py-1">
+            <span className="flex-1 text-slate-700">{descreve(i)} {(i.horario_inicial || i.horario_final) && <span className="text-slate-500">· {String(i.horario_inicial || "").slice(0,5)}–{String(i.horario_final || "").slice(0,5)}</span>}</span>
+            {i.motivo && <span className="text-slate-500">{i.motivo}</span>}
+            <button type="button" onClick={() => remover(i.id)} className="text-red-500 hover:text-red-700"><Trash2 className="h-3.5 w-3.5" /></button>
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Select value={form.tipo} onValueChange={(v) => setForm({ ...form, tipo: v })}>
+            <SelectTrigger className="h-8 w-48 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="data_especifica">Data específica</SelectItem>
+              <SelectItem value="periodo">Período (intervalo)</SelectItem>
+              <SelectItem value="recorrente_semanal">Recorrente (dias)</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input className="h-8 flex-1 text-xs" placeholder="Motivo (opcional)" value={form.motivo} onChange={(e) => setForm({ ...form, motivo: e.target.value })} />
+        </div>
+
+        {form.tipo === "data_especifica" && (
+          <Input type="date" className="h-8 w-52 text-xs" value={form.data_inicial} onChange={(e) => setForm({ ...form, data_inicial: e.target.value })} />
+        )}
+        {form.tipo === "periodo" && (
+          <div className="flex gap-2">
+            <Input type="date" className="h-8 flex-1 text-xs" value={form.data_inicial} onChange={(e) => setForm({ ...form, data_inicial: e.target.value })} />
+            <Input type="date" className="h-8 flex-1 text-xs" value={form.data_final} onChange={(e) => setForm({ ...form, data_final: e.target.value })} />
+          </div>
+        )}
+        {form.tipo === "recorrente_semanal" && (
+          <div className="flex flex-wrap gap-1">
+            {DIAS.map((d) => (
+              <button
+                type="button"
+                key={d.idx}
+                onClick={() => toggleDia(d.idx)}
+                className={`rounded-full px-2 py-0.5 text-xs ${form.dias_semana.includes(d.idx) ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"}`}
+              >{d.label}</button>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <TimeInput className="h-8 w-28 text-xs" value={form.horario_inicial} onChange={(e) => setForm({ ...form, horario_inicial: e.target.value })} />
+          <span className="text-xs text-slate-400">até</span>
+          <TimeInput className="h-8 w-28 text-xs" value={form.horario_final} onChange={(e) => setForm({ ...form, horario_final: e.target.value })} />
+          <span className="text-xs text-slate-400">(vazio = dia todo)</span>
+        </div>
+        <Button size="sm" variant="outline" onClick={salvar}><Plus className="h-3.5 w-3.5" /> Adicionar</Button>
+      </div>
     </div>
   );
 }
