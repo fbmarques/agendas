@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Models\Reserva;
+use App\Observers\ReservaObserver;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\ServiceProvider;
 
@@ -18,5 +20,7 @@ class AppServiceProvider extends ServiceProvider
             $email = urlencode($notifiable->getEmailForPasswordReset());
             return url("/reset-password?token={$token}&email={$email}");
         });
+
+        Reserva::observe(ReservaObserver::class);
     }
 }
