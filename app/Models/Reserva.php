@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 #[Fillable([
     'user_id', 'campi_id', 'grupo_id', 'local_id',
@@ -62,6 +63,13 @@ class Reserva extends Model
     public function campi(): BelongsTo
     {
         return $this->belongsTo(Campi::class);
+    }
+
+    public function recursos(): BelongsToMany
+    {
+        return $this->belongsToMany(Recurso::class, 'reserva_recurso')
+            ->withPivot('quantidade')
+            ->withTimestamps();
     }
 
     public function scopeAtivas(Builder $q): Builder

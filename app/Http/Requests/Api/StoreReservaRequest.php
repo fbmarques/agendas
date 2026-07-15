@@ -32,6 +32,9 @@ class StoreReservaRequest extends FormRequest
             'observacoes' => ['nullable', 'string'],
             'status' => ['nullable', 'in:confirmada,pendente,cancelada'],
             'recorrente' => ['nullable', 'boolean'],
+            'recursos' => ['nullable', 'array'],
+            'recursos.*.id' => ['required_with:recursos', 'integer', 'exists:recursos,id'],
+            'recursos.*.quantidade' => ['required_with:recursos', 'integer', 'min:1'],
         ];
     }
 

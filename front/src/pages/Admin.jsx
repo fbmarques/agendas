@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TimeInput } from "@/components/ui/time-input";
-import { Building2, Layers, MapPin, CalendarCheck, TrendingUp, Clock, LayoutDashboard, Users, BarChart3, Settings, Plus, Pencil, Trash2, Search, Tag, ClipboardList, CheckCircle2, XCircle } from "lucide-react";
+import { Building2, Layers, MapPin, CalendarCheck, TrendingUp, Clock, LayoutDashboard, Users, BarChart3, Settings, Plus, Pencil, Trash2, Search, Tag, ClipboardList, CheckCircle2, XCircle, Wrench } from "lucide-react";
 import { TIPOS_LOCAL, getCorTipo } from "@/lib/tiposLocal";
 
 const SECTIONS = [
@@ -25,6 +25,7 @@ const SECTIONS = [
   { key: "reservas", label: "Reservas", icon: CalendarCheck },
   { key: "pendentes", label: "Pendentes", icon: ClipboardList },
   { key: "periodos", label: "Períodos", icon: Clock },
+  { key: "recursos", label: "Recursos", icon: Wrench },
   { key: "usuarios", label: "Usuários", icon: Users },
   { key: "relatorios", label: "Relatórios", icon: BarChart3 },
   { key: "config", label: "Configurações", icon: Settings },
@@ -38,6 +39,7 @@ export default function Admin() {
   const [reservas, setReservas] = useState([]);
   const [users, setUsers] = useState([]);
   const [periodos, setPeriodos] = useState([]);
+  const [recursos, setRecursos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -51,13 +53,15 @@ export default function Admin() {
       base44.entities.Reserva.list(),
       base44.entities.User.list().catch(() => []),
       base44.entities.Periodo.list().catch(() => []),
-    ]).then(([c, g, l, r, u, p]) => {
+      base44.entities.Recurso.list().catch(() => []),
+    ]).then(([c, g, l, r, u, p, rc]) => {
       setCampi(c || []);
       setGrupos(g || []);
       setLocais(l || []);
       setReservas(r || []);
       setUsers(u || []);
       setPeriodos(p || []);
+      setRecursos(rc || []);
       setLoading(false);
     });
   };
@@ -223,6 +227,17 @@ export default function Admin() {
           )}
           {section === "pendentes" && (
             <PendentesSection users={users} locais={locais} onChanged={loadAll} />
+          )}
+          {section === "recursos" && (
+            <AdminTable
+              title="Recursos" items={recursos} search={search} setSearch={setSearch}
+              columns={["nome", "responsavel_nome", "responsavel_email", "quantidade", "status"]}
+              onAdd={() => { setEditItem(null); setModalOpen(true); }}
+              onEdit={(item) => { setEditItem(item); setModalOpen(true); }}
+              onDelete={(item) => base44.entities.Recurso.delete(item.id).then(loadAll)}
+              renderForm={() => <RecursoForm item={editItem} onSaved={() => { setModalOpen(false); loadAll(); }} />}
+              modalOpen={modalOpen} setModalOpen={setModalOpen}
+            />
           )}
           {section === "periodos" && (
             <AdminTable
@@ -738,6 +753,92 @@ function IndisponibilidadesBlock({ localId }) {
         </div>
         <Button size="sm" variant="outline" onClick={salvar}><Plus className="h-3.5 w-3.5" /> Adicionar</Button>
       </div>
+    </div>
+  );
+}
+
+function RecursoForm({ item, onSaved }) {
+  const DIAS = [
+    { idx: 1, label: "Seg" }, { idx: 2, label: "Ter" }, { idx: 3, label: "Qua" },
+    { idx: 4, label: "Qui" }, { idx: 5, label: "Sex" }, { idx: 6, label: "Sáb" }, { idx: 0, label: "Dom" },
+  ];
+  const initial = item ? {
+    nome: item.nome, responsavel_nome: item.responsavel_nome, responsavel_email: item.responsavel_email,
+    quantidade: item.quantidade || 1, status: item.status || "ativo",
+    disponibilidades: (item.disponibilidades || []).map((d) => ({
+      dias_semana: d.dias_semana || [],
+      horario_inicial: String(d.horario_inicial || "").slice(0, 5),
+      horario_final: String(d.horario_final || "").slice(0, 5),
+    })),
+  } : { nome: "", responsavel_nome: "", responsavel_email: "", quantidade: 1, status: "ativo", disponibilidades: [{ dias_semana: [1,2,3,4,5], horario_inicial: "08:00", horario_final: "12:00" }] };
+  const [form, setForm] = useState(initial);
+
+  const addJanela = () => setForm({ ...form, disponibilidades: [...form.disponibilidades, { dias_semana: [], horario_inicial: "", horario_final: "" }] });
+  const removeJanela = (i) => setForm({ ...form, disponibilidades: form.disponibilidades.filter((_, idx) => idx !== i) });
+  const setJanela = (i, patch) => setForm({ ...form, disponibilidades: form.disponibilidades.map((j, idx) => idx === i ? { ...j, ...patch } : j) });
+  const toggleDia = (i, d) => {
+    const j = form.disponibilidades[i];
+    const dias = j.dias_semana.includes(d) ? j.dias_semana.filter((x) => x !== d) : [...j.dias_semana, d];
+    setJanela(i, { dias_semana: dias });
+  };
+
+  const save = async () => {
+    const payload = { ...form, quantidade: parseInt(form.quantidade, 10) || 1 };
+    try {
+      if (item?.id) await base44.entities.Recurso.update(item.id, payload);
+      else await base44.entities.Recurso.create(payload);
+      onSaved();
+    } catch (e) {
+      alert(e?.data?.message || "Falha ao salvar o recurso.");
+    }
+  };
+
+  return (
+    <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+      <div><Label>Nome *</Label><Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Ex.: Som, Copa, Técnico" /></div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><Label>Responsável *</Label><Input value={form.responsavel_nome} onChange={(e) => setForm({ ...form, responsavel_nome: e.target.value })} /></div>
+        <div><Label>Email do responsável *</Label><Input type="email" value={form.responsavel_email} onChange={(e) => setForm({ ...form, responsavel_email: e.target.value })} /></div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><Label>Quantidade *</Label><Input type="number" min="1" value={form.quantidade} onChange={(e) => setForm({ ...form, quantidade: e.target.value })} /></div>
+        <div><Label>Status</Label>
+          <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="ativo">Ativo</SelectItem><SelectItem value="inativo">Inativo</SelectItem></SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <Label className="text-sm font-medium text-slate-800">Janelas de disponibilidade</Label>
+          <Button size="sm" variant="outline" onClick={addJanela}><Plus className="h-3.5 w-3.5" /> Janela</Button>
+        </div>
+        {form.disponibilidades.length === 0 && <p className="text-xs text-slate-400">Sem janelas — recurso ficará indisponível.</p>}
+        {form.disponibilidades.map((j, i) => (
+          <div key={i} className="mb-2 rounded border border-slate-100 p-2">
+            <div className="mb-1 flex flex-wrap gap-1">
+              {DIAS.map((d) => (
+                <button
+                  key={d.idx}
+                  type="button"
+                  onClick={() => toggleDia(i, d.idx)}
+                  className={`rounded-full px-2 py-0.5 text-xs ${j.dias_semana.includes(d.idx) ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"}`}
+                >{d.label}</button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <TimeInput className="h-8 w-24 text-xs" value={j.horario_inicial} onChange={(e) => setJanela(i, { horario_inicial: e.target.value })} />
+              <span className="text-xs text-slate-400">até</span>
+              <TimeInput className="h-8 w-24 text-xs" value={j.horario_final} onChange={(e) => setJanela(i, { horario_final: e.target.value })} />
+              <button type="button" onClick={() => removeJanela(i)} className="ml-auto text-red-500 hover:text-red-700"><Trash2 className="h-3.5 w-3.5" /></button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <DialogFooter><Button variant="outline" onClick={onSaved}>Cancelar</Button><Button className="bg-blue-600" onClick={save}>Salvar</Button></DialogFooter>
     </div>
   );
 }

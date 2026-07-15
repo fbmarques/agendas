@@ -25,6 +25,8 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
   const [periodos, setPeriodos] = useState([]);
+  const [recursosDisponiveis, setRecursosDisponiveis] = useState([]);
+  const [recursosSelecionados, setRecursosSelecionados] = useState({});
 
   const locked = !!preLocalId;
 
@@ -32,6 +34,9 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
     base44.auth.me().then(setUser).catch(() => {});
     base44.entities.Periodo.list()
       .then((list) => setPeriodos((list || []).filter((p) => p.status === "ativo")))
+      .catch(() => {});
+    base44.entities.Recurso.list()
+      .then((list) => setRecursosDisponiveis((list || []).filter((r) => r.status === "ativo")))
       .catch(() => {});
   }, []);
 
@@ -55,6 +60,7 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
     });
     setTipoReserva("unica");
     setDiasRecorrente({});
+    setRecursosSelecionados({});
     setLoading(false);
   }, [open, preCampiId, preGrupoId, preLocalId, preData, locais]);
 
@@ -159,6 +165,9 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
         responsavel_nome: user?.full_name || user?.email || "Usuário",
         status: "confirmada",
       };
+      const recursosPayload = Object.entries(recursosSelecionados)
+        .filter(([, q]) => q && q > 0)
+        .map(([id, q]) => ({ id: parseInt(id, 10), quantidade: parseInt(q, 10) }));
       if (tipoReserva === "unica") {
         await base44.entities.Reserva.create({
           ...base,
@@ -167,6 +176,7 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
           horario_inicial: form.horario_inicial,
           horario_final: form.horario_final,
           recorrente: false,
+          recursos: recursosPayload,
         });
       } else {
         const payloads = ocorrencias.map((o) => ({
@@ -176,6 +186,7 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
           horario_inicial: o.horario_inicial,
           horario_final: o.horario_final,
           recorrente: true,
+          recursos: recursosPayload,
         }));
         await base44.entities.Reserva.bulkCreate(payloads);
       }
@@ -362,6 +373,43 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
             <Label className="mb-1.5">Observações</Label>
             <Textarea value={form.observacoes} onChange={(e) => setForm({ ...form, observacoes: e.target.value })} placeholder="Informações adicionais sobre a reserva (opcional)" rows={2} />
           </div>
+
+          {recursosDisponiveis.length > 0 && (
+            <div>
+              <Label className="mb-1.5">Recursos adicionais</Label>
+              <p className="mb-2 text-xs text-slate-400">Selecione os recursos e a quantidade. O sistema valida a disponibilidade.</p>
+              <div className="space-y-1 rounded-lg border border-slate-200 p-2">
+                {recursosDisponiveis.map((rec) => {
+                  const qtd = recursosSelecionados[rec.id] || 0;
+                  return (
+                    <div key={rec.id} className="flex items-center gap-2 rounded px-1 py-1 hover:bg-slate-50">
+                      <input
+                        type="checkbox"
+                        checked={qtd > 0}
+                        onChange={(e) => setRecursosSelecionados((prev) => {
+                          const next = { ...prev };
+                          if (e.target.checked) next[rec.id] = 1;
+                          else delete next[rec.id];
+                          return next;
+                        })}
+                      />
+                      <span className="flex-1 text-sm text-slate-700">{rec.nome}</span>
+                      <span className="text-xs text-slate-400">até {rec.quantidade}</span>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={rec.quantidade}
+                        value={qtd || ""}
+                        disabled={qtd === 0}
+                        onChange={(e) => setRecursosSelecionados((prev) => ({ ...prev, [rec.id]: Math.max(1, Math.min(rec.quantidade, parseInt(e.target.value, 10) || 1)) }))}
+                        className="h-8 w-16 text-xs"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Conflict message */}
           {tipoReserva === "unica" && conflito && (

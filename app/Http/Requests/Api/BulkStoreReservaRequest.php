@@ -30,6 +30,9 @@ class BulkStoreReservaRequest extends FormRequest
             'reservas.*.observacoes' => ['nullable', 'string'],
             'reservas.*.status' => ['nullable', 'in:confirmada,pendente,cancelada'],
             'reservas.*.recorrente' => ['nullable', 'boolean'],
+            'reservas.*.recursos' => ['nullable', 'array'],
+            'reservas.*.recursos.*.id' => ['required_with:reservas.*.recursos', 'integer', 'exists:recursos,id'],
+            'reservas.*.recursos.*.quantidade' => ['required_with:reservas.*.recursos', 'integer', 'min:1'],
         ];
     }
 }

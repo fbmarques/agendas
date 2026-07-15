@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\GrupoController;
 use App\Http\Controllers\Api\LocalController;
 use App\Http\Controllers\Api\LocalIndisponibilidadeController;
 use App\Http\Controllers\Api\PeriodoController;
+use App\Http\Controllers\Api\RecursoController;
 use App\Http\Controllers\Api\ReservaController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
@@ -81,4 +82,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('indisponibilidades/{indisponibilidade}', [LocalIndisponibilidadeController::class, 'update']);
     Route::patch('indisponibilidades/{indisponibilidade}', [LocalIndisponibilidadeController::class, 'update']);
     Route::delete('indisponibilidades/{indisponibilidade}', [LocalIndisponibilidadeController::class, 'destroy']);
+
+    Route::get('recursos', [RecursoController::class, 'index']);
+    Route::get('recursos/{recurso}', [RecursoController::class, 'show']);
+    Route::get('recursos/{recurso}/agenda', [RecursoController::class, 'agenda']);
+    Route::post('recursos/{recurso}/verificar-disponibilidade', [RecursoController::class, 'verificarDisponibilidade']);
+    Route::post('recursos', [RecursoController::class, 'store']);
+    Route::put('recursos/{recurso}', [RecursoController::class, 'update']);
+    Route::patch('recursos/{recurso}', [RecursoController::class, 'update']);
+    Route::delete('recursos/{recurso}', [RecursoController::class, 'destroy']);
 });

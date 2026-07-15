@@ -146,6 +146,11 @@ const LocalIndisponibilidade = {
   delete: (id) => request("DELETE", `/indisponibilidades/${id}`),
 };
 
+const Recurso = makeEntity("recursos");
+Recurso.verificarDisponibilidade = (id, payload) =>
+  request("POST", `/recursos/${id}/verificar-disponibilidade`, payload);
+Recurso.agenda = (id) => request("GET", `/recursos/${id}/agenda`);
+
 export const base44 = {
   auth,
   entities: {
@@ -156,5 +161,6 @@ export const base44 = {
     User: makeEntity("users"),
     Periodo: makeEntity("periodos"),
     LocalIndisponibilidade,
+    Recurso,
   },
 };

@@ -9,6 +9,7 @@ use App\Http\Requests\Api\StoreReservaRequest;
 use App\Http\Requests\Api\UpdateReservaRequest;
 use App\Models\Local;
 use App\Models\Reserva;
+use App\Services\RecursoDisponibilidadeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -51,24 +52,47 @@ class ReservaController extends Controller
         return JsonResource::collection($query->orderBy('data_inicial')->get());
     }
 
-    public function store(StoreReservaRequest $request): JsonResponse
+    public function store(StoreReservaRequest $request, RecursoDisponibilidadeService $svc): JsonResponse
     {
         $this->authorize('create', Reserva::class);
 
         $data = $request->validated();
-        $data['user_id'] = $request->user()->id;
+        $recursos = $data['recursos'] ?? [];
+        unset($data['recursos']);
 
+        // Verificar disponibilidade de cada recurso ANTES de criar a reserva
+        foreach ($recursos as $r) {
+            $chk = $svc->verificar(
+                (int) $r['id'],
+                (int) $r['quantidade'],
+                $data['data_inicial'],
+                $data['data_final'],
+                $data['horario_inicial'],
+                $data['horario_final'],
+            );
+            if (! $chk['ok']) {
+                return response()->json(['message' => $chk['motivo']], 422);
+            }
+        }
+
+        $data['user_id'] = $request->user()->id;
         $local = Local::findOrFail($data['local_id']);
         if (! array_key_exists('status', $data) || $data['status'] === null) {
             $data['status'] = $local->requer_aprovacao ? 'pendente' : 'confirmada';
         }
 
-        $reserva = Reserva::create($data);
+        $reserva = DB::transaction(function () use ($data, $recursos) {
+            $r = Reserva::create($data);
+            foreach ($recursos as $rec) {
+                $r->recursos()->attach($rec['id'], ['quantidade' => (int) $rec['quantidade']]);
+            }
+            return $r;
+        });
 
-        return response()->json($reserva, 201);
+        return response()->json($reserva->load('recursos'), 201);
     }
 
-    public function bulk(BulkStoreReservaRequest $request): JsonResponse
+    public function bulk(BulkStoreReservaRequest $request, RecursoDisponibilidadeService $svc): JsonResponse
     {
         $this->authorize('create', Reserva::class);
 
@@ -77,7 +101,7 @@ class ReservaController extends Controller
         $created = [];
 
         try {
-            DB::transaction(function () use ($items, $userId, &$created) {
+            DB::transaction(function () use ($items, $userId, $svc, &$created) {
                 foreach ($items as $index => $data) {
                     $conflito = Reserva::conflitos(
                         $data['local_id'],
@@ -109,6 +133,26 @@ class ReservaController extends Controller
                         ]));
                     }
 
+                    $recursos = $data['recursos'] ?? [];
+                    unset($data['recursos']);
+
+                    foreach ($recursos as $rec) {
+                        $chk = $svc->verificar(
+                            (int) $rec['id'],
+                            (int) $rec['quantidade'],
+                            $data['data_inicial'],
+                            $data['data_final'],
+                            $data['horario_inicial'],
+                            $data['horario_final'],
+                        );
+                        if (! $chk['ok']) {
+                            throw new \RuntimeException(json_encode([
+                                'index' => $index,
+                                'message' => "Item {$index}: {$chk['motivo']}",
+                            ]));
+                        }
+                    }
+
                     $data['user_id'] = $userId;
 
                     $local = Local::findOrFail($data['local_id']);
@@ -116,7 +160,11 @@ class ReservaController extends Controller
                         $data['status'] = $local->requer_aprovacao ? 'pendente' : 'confirmada';
                     }
 
-                    $created[] = Reserva::create($data);
+                    $reserva = Reserva::create($data);
+                    foreach ($recursos as $rec) {
+                        $reserva->recursos()->attach($rec['id'], ['quantidade' => (int) $rec['quantidade']]);
+                    }
+                    $created[] = $reserva->load('recursos');
                 }
             });
         } catch (\RuntimeException $e) {
@@ -135,7 +183,7 @@ class ReservaController extends Controller
 
     public function show(Reserva $reserva): JsonResource
     {
-        return new JsonResource($reserva);
+        return new JsonResource($reserva->load('recursos'));
     }
 
     public function update(UpdateReservaRequest $request, Reserva $reserva): JsonResource
@@ -144,7 +192,7 @@ class ReservaController extends Controller
 
         $reserva->update($request->validated());
 
-        return new JsonResource($reserva->fresh());
+        return new JsonResource($reserva->fresh('recursos'));
     }
 
     public function aprovar(Request $request, Reserva $reserva): JsonResource
@@ -157,7 +205,7 @@ class ReservaController extends Controller
             'aprovada_em' => now(),
         ]);
 
-        return new JsonResource($reserva->fresh());
+        return new JsonResource($reserva->fresh('recursos'));
     }
 
     public function cancelar(CancelarReservaRequest $request, Reserva $reserva): JsonResource
@@ -171,7 +219,7 @@ class ReservaController extends Controller
             'cancelada_em' => now(),
         ]);
 
-        return new JsonResource($reserva->fresh());
+        return new JsonResource($reserva->fresh('recursos'));
     }
 
     public function destroy(Reserva $reserva): JsonResponse
