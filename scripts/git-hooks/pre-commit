@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Rebuild o frontend automaticamente quando um commit toca arquivos em front/.
+# Necessário porque produção é hospedagem compartilhada sem npm — o bundle
+# compilado precisa ser commitado junto com o código-fonte.
+set -e
+
+CHANGED="$(git diff --cached --name-only --diff-filter=ACMR)"
+
+if ! echo "$CHANGED" | grep -Eq '^front/(src/|index\.html|package(-lock)?\.json|vite\.config|postcss\.config|tailwind\.config|components\.json|jsconfig\.json)'; then
+    exit 0
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+if ! command -v npm >/dev/null 2>&1; then
+    echo "pre-commit: npm não está no PATH — build manual necessário; commit abortado." >&2
+    exit 1
+fi
+
+echo "pre-commit: mudanças no frontend detectadas, rodando 'npm run build'..."
+(cd "$REPO_ROOT/front" && npm run build --silent)
+
+git add -A public/index.html public/assets
+
+echo "pre-commit: frontend recompilado e incluído no commit."
