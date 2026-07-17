@@ -235,7 +235,7 @@ export default function Admin() {
               onAdd={() => { setEditItem(null); setModalOpen(true); }}
               onEdit={(item) => { setEditItem(item); setModalOpen(true); }}
               onDelete={(item) => base44.entities.Recurso.delete(item.id).then(loadAll)}
-              renderForm={() => <RecursoForm item={editItem} onSaved={() => { setModalOpen(false); loadAll(); }} />}
+              renderForm={() => <RecursoForm item={editItem} users={users} onSaved={() => { setModalOpen(false); loadAll(); }} />}
               modalOpen={modalOpen} setModalOpen={setModalOpen}
             />
           )}
@@ -760,21 +760,31 @@ function IndisponibilidadesBlock({ localId }) {
   );
 }
 
-function RecursoForm({ item, onSaved }) {
+function RecursoForm({ item, users = [], onSaved }) {
   const DIAS = [
     { idx: 1, label: "Seg" }, { idx: 2, label: "Ter" }, { idx: 3, label: "Qua" },
     { idx: 4, label: "Qui" }, { idx: 5, label: "Sex" }, { idx: 6, label: "Sáb" }, { idx: 0, label: "Dom" },
   ];
   const initial = item ? {
-    nome: item.nome, responsavel_nome: item.responsavel_nome, responsavel_email: item.responsavel_email,
+    nome: item.nome,
+    responsavel_nome: item.responsavel_nome || "",
+    responsavel_email: item.responsavel_email || "",
     status: item.status || "ativo",
+    gerentes_ids: (item.gerentes || []).map((g) => String(g.id)),
     disponibilidades: (item.disponibilidades || []).map((d) => ({
       dias_semana: d.dias_semana || [],
       horario_inicial: String(d.horario_inicial || "").slice(0, 5),
       horario_final: String(d.horario_final || "").slice(0, 5),
     })),
-  } : { nome: "", responsavel_nome: "", responsavel_email: "", status: "ativo", disponibilidades: [{ dias_semana: [1,2,3,4,5], horario_inicial: "08:00", horario_final: "12:00" }] };
+  } : { nome: "", responsavel_nome: "", responsavel_email: "", status: "ativo", gerentes_ids: [], disponibilidades: [{ dias_semana: [1,2,3,4,5], horario_inicial: "08:00", horario_final: "12:00" }] };
   const [form, setForm] = useState(initial);
+  const toggleGerente = (uid) => {
+    const s = String(uid);
+    setForm((f) => ({
+      ...f,
+      gerentes_ids: f.gerentes_ids.includes(s) ? f.gerentes_ids.filter((x) => x !== s) : [...f.gerentes_ids, s],
+    }));
+  };
 
   const editMode = !!item?.id;
   const [unidades, setUnidades] = useState([]);
@@ -872,6 +882,7 @@ function RecursoForm({ item, onSaved }) {
 
   const save = async () => {
     const payload = { ...form };
+    payload.gerentes_ids = form.gerentes_ids.map((s) => parseInt(s, 10));
     if (!editMode && unidadesNovas.length > 0) payload.unidades = unidadesNovas;
     try {
       if (editMode) await base44.entities.Recurso.update(item.id, payload);
@@ -886,8 +897,37 @@ function RecursoForm({ item, onSaved }) {
     <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
       <div><Label>Nome *</Label><Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Ex.: Som, Copa, Técnico" /></div>
       <div className="grid grid-cols-2 gap-3">
-        <div><Label>Responsável *</Label><Input value={form.responsavel_nome} onChange={(e) => setForm({ ...form, responsavel_nome: e.target.value })} /></div>
-        <div><Label>Email do responsável *</Label><Input type="email" value={form.responsavel_email} onChange={(e) => setForm({ ...form, responsavel_email: e.target.value })} /></div>
+        <div>
+          <Label>Responsável (externo, opcional)</Label>
+          <Input value={form.responsavel_nome} onChange={(e) => setForm({ ...form, responsavel_nome: e.target.value })} placeholder="Ex.: Ana Silva" />
+        </div>
+        <div>
+          <Label>Email do responsável (externo, opcional)</Label>
+          <Input type="email" value={form.responsavel_email} onChange={(e) => setForm({ ...form, responsavel_email: e.target.value })} placeholder="ana@instituicao.edu" />
+        </div>
+      </div>
+      <p className="-mt-2 text-[11px] text-slate-400">
+        Use os campos acima quando o responsável não é usuário do sistema (recebe e-mail direto). Para usuários do sistema, use os gerentes abaixo.
+      </p>
+
+      <div className="rounded-lg border border-slate-200 p-3">
+        <Label className="text-sm font-medium text-slate-800">Gerentes do recurso</Label>
+        <p className="mb-2 text-[11px] text-slate-400">
+          Usuários que podem editar o recurso, gerenciar unidades e receber e-mails de reservas que usam este recurso.
+        </p>
+        <div className="max-h-40 space-y-1 overflow-y-auto rounded border border-slate-100 p-2">
+          {users.length === 0 && <p className="text-xs text-slate-400">Nenhum usuário disponível.</p>}
+          {users.map((u) => {
+            const checked = form.gerentes_ids.includes(String(u.id));
+            return (
+              <label key={u.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-slate-50">
+                <input type="checkbox" checked={checked} onChange={() => toggleGerente(u.id)} />
+                <span className="text-xs text-slate-700">{u.full_name || u.email}</span>
+                <span className="text-[10px] text-slate-400">{u.email}</span>
+              </label>
+            );
+          })}
+        </div>
       </div>
       <div>
         <Label>Status</Label>

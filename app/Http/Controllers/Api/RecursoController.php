@@ -23,7 +23,7 @@ class RecursoController extends Controller
     public function index(): JsonResource
     {
         return JsonResource::collection(
-            Recurso::with('disponibilidades', 'unidades')
+            Recurso::with('disponibilidades', 'unidades', 'gerentes')
                 ->withCount(['unidadesAtivas'])
                 ->orderBy('nome')
                 ->get(),
@@ -32,7 +32,7 @@ class RecursoController extends Controller
 
     public function show(Recurso $recurso): JsonResource
     {
-        return new JsonResource($recurso->load('disponibilidades', 'unidades')->loadCount('unidadesAtivas'));
+        return new JsonResource($recurso->load('disponibilidades', 'unidades', 'gerentes')->loadCount('unidadesAtivas'));
     }
 
     public function store(StoreRecursoRequest $request): JsonResponse
@@ -41,9 +41,10 @@ class RecursoController extends Controller
         $data = $request->validated();
         $disp = $data['disponibilidades'] ?? [];
         $unidades = $data['unidades'] ?? [];
-        unset($data['disponibilidades'], $data['unidades']);
+        $gerentes = $data['gerentes_ids'] ?? [];
+        unset($data['disponibilidades'], $data['unidades'], $data['gerentes_ids']);
 
-        $recurso = DB::transaction(function () use ($data, $disp, $unidades) {
+        $recurso = DB::transaction(function () use ($data, $disp, $unidades, $gerentes) {
             $r = Recurso::create($data);
             foreach ($disp as $d) {
                 $r->disponibilidades()->create($d);
@@ -55,11 +56,14 @@ class RecursoController extends Controller
                     'status' => 'ativo',
                 ]);
             }
+            if (! empty($gerentes)) {
+                $r->gerentes()->sync($gerentes);
+            }
             return $r;
         });
 
         return response()->json(
-            $recurso->load('disponibilidades', 'unidades')->loadCount('unidadesAtivas'),
+            $recurso->load('disponibilidades', 'unidades', 'gerentes')->loadCount('unidadesAtivas'),
             201,
         );
     }
@@ -69,9 +73,14 @@ class RecursoController extends Controller
         $this->authorize('update', $recurso);
         $data = $request->validated();
         $disp = $data['disponibilidades'] ?? null;
-        unset($data['disponibilidades']);
+        // Só admin pode alterar gerentes via update do recurso
+        $gerentes = null;
+        if ($request->user()?->isAdmin() && array_key_exists('gerentes_ids', $data)) {
+            $gerentes = $data['gerentes_ids'];
+        }
+        unset($data['disponibilidades'], $data['gerentes_ids']);
 
-        DB::transaction(function () use ($recurso, $data, $disp) {
+        DB::transaction(function () use ($recurso, $data, $disp, $gerentes) {
             $recurso->update($data);
             if (is_array($disp)) {
                 $recurso->disponibilidades()->delete();
@@ -79,9 +88,29 @@ class RecursoController extends Controller
                     $recurso->disponibilidades()->create($d);
                 }
             }
+            if (is_array($gerentes)) {
+                $recurso->gerentes()->sync($gerentes);
+            }
         });
 
-        return new JsonResource($recurso->fresh(['disponibilidades', 'unidades'])->loadCount('unidadesAtivas'));
+        return new JsonResource($recurso->fresh(['disponibilidades', 'unidades', 'gerentes'])->loadCount('unidadesAtivas'));
+    }
+
+    public function listarGerentes(Recurso $recurso): JsonResource
+    {
+        $this->authorize('view', $recurso);
+        return JsonResource::collection($recurso->gerentes()->orderBy('full_name')->get());
+    }
+
+    public function definirGerentes(Request $request, Recurso $recurso): JsonResource
+    {
+        $this->authorize('gerenciarGerentes', $recurso);
+        $data = $request->validate([
+            'user_ids' => ['array'],
+            'user_ids.*' => ['integer', 'exists:users,id'],
+        ]);
+        $recurso->gerentes()->sync($data['user_ids'] ?? []);
+        return JsonResource::collection($recurso->gerentes()->orderBy('full_name')->get());
     }
 
     public function destroy(Recurso $recurso): JsonResponse

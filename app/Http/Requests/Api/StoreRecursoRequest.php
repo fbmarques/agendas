@@ -15,9 +15,11 @@ class StoreRecursoRequest extends FormRequest
     {
         return [
             'nome' => ['required', 'string', 'max:255'],
-            'responsavel_nome' => ['required', 'string', 'max:255'],
-            'responsavel_email' => ['required', 'email', 'max:255'],
+            'responsavel_nome' => ['nullable', 'string', 'max:255'],
+            'responsavel_email' => ['nullable', 'email', 'max:255'],
             'status' => ['nullable', 'in:ativo,inativo'],
+            'gerentes_ids' => ['nullable', 'array'],
+            'gerentes_ids.*' => ['integer', 'exists:users,id'],
             'disponibilidades' => ['nullable', 'array'],
             'disponibilidades.*.dias_semana' => ['required', 'array', 'min:1'],
             'disponibilidades.*.dias_semana.*' => ['integer', 'between:0,6'],

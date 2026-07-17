@@ -37,6 +37,11 @@ class User extends Authenticatable
         return $this->belongsToMany(Local::class, 'local_gerentes')->withTimestamps();
     }
 
+    public function recursosGerenciados(): BelongsToMany
+    {
+        return $this->belongsToMany(Recurso::class, 'recurso_gerentes')->withTimestamps();
+    }
+
     public function podeAprovarReserva(Reserva $reserva): bool
     {
         if ($this->isAdmin()) return true;

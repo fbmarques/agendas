@@ -151,6 +151,8 @@ Recurso.verificarDisponibilidade = (id, payload) =>
   request("POST", `/recursos/${id}/verificar-disponibilidade`, payload);
 Recurso.agenda = (id) => request("GET", `/recursos/${id}/agenda`);
 Recurso.disponiveis = (payload) => request("POST", "/recursos/disponiveis", payload);
+Recurso.gerentes = (id) => request("GET", `/recursos/${id}/gerentes`);
+Recurso.setGerentes = (id, userIds) => request("PUT", `/recursos/${id}/gerentes`, { user_ids: userIds });
 Recurso.unidades = (id) => request("GET", `/recursos/${id}/unidades`);
 Recurso.criarUnidade = (id, payload) => request("POST", `/recursos/${id}/unidades`, payload);
 Recurso.atualizarUnidade = (id, unidadeId, payload) =>

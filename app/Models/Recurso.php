@@ -40,6 +40,17 @@ class Recurso extends Model
             ->withTimestamps();
     }
 
+    public function gerentes(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'recurso_gerentes')->withTimestamps();
+    }
+
+    public function temGerente(?User $user): bool
+    {
+        if (! $user) return false;
+        return $this->gerentes()->where('users.id', $user->id)->exists();
+    }
+
     // Quantidade agora é derivada do número de unidades ativas (patrimônios).
     // Se o registro foi carregado com withCount('unidadesAtivas'), reaproveita
     // a contagem para evitar N+1 nas listagens.

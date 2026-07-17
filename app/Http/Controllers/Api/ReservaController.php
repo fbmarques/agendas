@@ -9,6 +9,8 @@ use App\Http\Requests\Api\StoreReservaRequest;
 use App\Http\Requests\Api\UpdateReservaRequest;
 use App\Models\Local;
 use App\Models\Reserva;
+use App\Notifications\ReservaCriada;
+use App\Observers\ReservaObserver;
 use App\Services\RecursoDisponibilidadeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -88,6 +90,10 @@ class ReservaController extends Controller
             }
             return $r;
         });
+
+        if (! empty($recursos)) {
+            (new ReservaObserver)->notificarRecursos($reserva->load('recursos.gerentes'), new ReservaCriada($reserva));
+        }
 
         return response()->json($reserva->load('recursos'), 201);
     }
@@ -173,6 +179,13 @@ class ReservaController extends Controller
                 'message' => $payload['message'] ?? $e->getMessage(),
                 'conflict_index' => $payload['index'] ?? null,
             ], 422);
+        }
+
+        $observer = new ReservaObserver;
+        foreach ($created as $r) {
+            if ($r->recursos->isNotEmpty()) {
+                $observer->notificarRecursos($r->load('recursos.gerentes'), new ReservaCriada($r));
+            }
         }
 
         return response()->json([

@@ -17,7 +17,8 @@ class ReservaObserver
         if ($usuarios->isNotEmpty()) {
             Notification::send($usuarios, new ReservaCriada($reserva));
         }
-        $this->notificarResponsaveisRecursos($reserva, new ReservaCriada($reserva));
+        // Recursos são anexados via pivot DEPOIS de create(), então
+        // notificarRecursos() é chamada explicitamente pelo controller.
     }
 
     public function updated(Reserva $reserva): void
@@ -59,13 +60,39 @@ class ReservaObserver
     }
 
     /**
-     * Responsáveis dos recursos (por email, mesmo que não sejam usuários do sistema).
+     * Envia a notificação para: (1) gerentes de cada recurso (User-typed) +
+     * (2) responsavel_email de cada recurso (anônimo, para responsável que
+     * não é usuário do sistema). Evita duplicata quando o gerente também
+     * for o responsavel_email.
+     *
+     * Público porque é chamado do controller após o attach do pivot (o
+     * observer created() dispara antes do attach).
      */
+    public function notificarRecursos(Reserva $reserva, $notification): void
+    {
+        $this->notificarResponsaveisRecursos($reserva, $notification);
+    }
+
     private function notificarResponsaveisRecursos(Reserva $reserva, $notification): void
     {
-        $emails = $reserva->recursos->pluck('responsavel_email')->filter()->unique()->values();
-        foreach ($emails as $email) {
-            Notification::route('mail', $email)->notify($notification);
+        $emailsJaNotificados = [];
+
+        foreach ($reserva->recursos as $recurso) {
+            foreach ($recurso->gerentes as $gerente) {
+                if (! $gerente->email) continue;
+                $key = strtolower(trim($gerente->email));
+                if (isset($emailsJaNotificados[$key])) continue;
+                $emailsJaNotificados[$key] = true;
+                Notification::send([$gerente], $notification);
+            }
+
+            $respEmail = $recurso->responsavel_email;
+            if ($respEmail) {
+                $key = strtolower(trim($respEmail));
+                if (isset($emailsJaNotificados[$key])) continue;
+                $emailsJaNotificados[$key] = true;
+                Notification::route('mail', $respEmail)->notify($notification);
+            }
         }
     }
 }

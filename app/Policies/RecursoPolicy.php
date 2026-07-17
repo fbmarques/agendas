@@ -24,7 +24,7 @@ class RecursoPolicy
 
     public function update(User $user, Recurso $recurso): bool
     {
-        return $user->isAdmin();
+        return $user->isAdmin() || $recurso->temGerente($user);
     }
 
     public function delete(User $user, Recurso $recurso): bool
@@ -32,9 +32,19 @@ class RecursoPolicy
         return $user->isAdmin();
     }
 
+    public function gerenciarGerentes(User $user, Recurso $recurso): bool
+    {
+        return $user->isAdmin();
+    }
+
     public function verAgenda(User $user, Recurso $recurso): bool
     {
         if ($user->isAdmin()) return true;
-        return strtolower(trim($user->email)) === strtolower(trim($recurso->responsavel_email));
+        if ($recurso->temGerente($user)) return true;
+        if ($recurso->responsavel_email
+            && strtolower(trim($user->email)) === strtolower(trim($recurso->responsavel_email))) {
+            return true;
+        }
+        return false;
     }
 }
