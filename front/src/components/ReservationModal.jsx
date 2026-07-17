@@ -27,6 +27,7 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
   const [periodos, setPeriodos] = useState([]);
   const [recursosDisponiveis, setRecursosDisponiveis] = useState([]);
   const [recursosSelecionados, setRecursosSelecionados] = useState({});
+  const [erroEnvio, setErroEnvio] = useState(null);
 
   const locked = !!preLocalId;
 
@@ -61,6 +62,7 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
     setTipoReserva("unica");
     setDiasRecorrente({});
     setRecursosSelecionados({});
+    setErroEnvio(null);
     setLoading(false);
   }, [open, preCampiId, preGrupoId, preLocalId, preData, locais]);
 
@@ -153,6 +155,7 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
   const handleSubmit = async () => {
     if (!podeSalvar) return;
     setLoading(true);
+    setErroEnvio(null);
     try {
       const base = {
         titulo: form.titulo,
@@ -194,6 +197,16 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
       onClose?.();
     } catch (e) {
       console.error(e);
+      const data = e?.data;
+      let msg = e?.message || "Erro ao salvar a reserva.";
+      if (data?.errors && typeof data.errors === "object") {
+        const first = Object.values(data.errors).flat()[0];
+        if (first) msg = first;
+      } else if (data?.message) {
+        msg = data.message;
+      }
+      if (e?.status === 401) msg = "Sua sessão expirou. Faça login novamente.";
+      setErroEnvio(msg);
     } finally {
       setLoading(false);
     }
@@ -437,6 +450,18 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
                       <li key={i}>{fnsFormat(parseISO(c.date), "dd/MM/yyyy", { locale: ptBR })} · conflita com <strong>{c.titulo}</strong> ({c.horario})</li>
                     ))}
                   </ul>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {erroEnvio && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+                <div>
+                  <p className="text-sm font-semibold text-red-800">Não foi possível salvar a reserva.</p>
+                  <p className="text-sm text-red-700">{erroEnvio}</p>
                 </div>
               </div>
             </div>
