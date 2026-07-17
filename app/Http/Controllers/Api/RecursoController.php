@@ -281,6 +281,196 @@ class RecursoController extends Controller
         ]);
     }
 
+    public function relatorioReservas(Recurso $recurso, Request $request)
+    {
+        $this->authorize('view', $recurso);
+        [$di, $df, $format] = $this->relatorioParams($request);
+
+        $rows = DB::table('reserva_recurso as rr')
+            ->join('reservas as r', 'r.id', '=', 'rr.reserva_id')
+            ->leftJoin('users as u', 'u.id', '=', 'r.user_id')
+            ->leftJoin('locais as l', 'l.id', '=', 'r.local_id')
+            ->where('rr.recurso_id', $recurso->id)
+            ->where('r.status', '!=', 'cancelada')
+            ->where('r.data_inicial', '<=', $df)
+            ->where('r.data_final', '>=', $di)
+            ->orderBy('r.data_inicial')->orderBy('r.horario_inicial')
+            ->get([
+                'r.id as reserva_id', 'r.titulo',
+                'r.data_inicial', 'r.data_final',
+                'r.horario_inicial', 'r.horario_final',
+                'rr.quantidade',
+                DB::raw('COALESCE(u.full_name, r.responsavel_nome) as usuario'),
+                'l.nome as local',
+            ])
+            ->map(fn ($row) => [
+                'reserva_id' => (string) $row->reserva_id,
+                'titulo' => $row->titulo,
+                'data_inicial' => $row->data_inicial,
+                'data_final' => $row->data_final,
+                'horario' => substr($row->horario_inicial, 0, 5).' — '.substr($row->horario_final, 0, 5),
+                'quantidade' => (int) $row->quantidade,
+                'usuario' => $row->usuario,
+                'local' => $row->local,
+            ]);
+
+        if ($format === 'csv') {
+            return $this->csvStream("recurso-{$recurso->id}-reservas.csv",
+                ['Reserva', 'Título', 'Data inicial', 'Data final', 'Horário', 'Quantidade', 'Usuário', 'Local'],
+                $rows->map(fn ($r) => [$r['reserva_id'], $r['titulo'], $r['data_inicial'], $r['data_final'], $r['horario'], $r['quantidade'], $r['usuario'], $r['local']]),
+            );
+        }
+
+        return response()->json(['periodo' => ['inicio' => $di, 'fim' => $df], 'linhas' => $rows]);
+    }
+
+    public function relatorioOcupacao(Recurso $recurso, Request $request)
+    {
+        $this->authorize('view', $recurso);
+        [$di, $df, $format] = $this->relatorioParams($request);
+
+        $recurso->load('disponibilidades');
+        $qtdAtiva = $recurso->quantidade;
+
+        // Horas disponíveis: para cada dia do intervalo, some as horas das janelas do dia da semana * qtd
+        $iter = strtotime($di);
+        $end = strtotime($df);
+        $porMes = [];
+        while ($iter <= $end) {
+            $ym = date('Y-m', $iter);
+            $dow = (int) date('w', $iter);
+            $porMes[$ym] ??= ['mes' => $ym, 'horas_disponiveis' => 0.0, 'horas_reservadas' => 0.0];
+
+            foreach ($recurso->disponibilidades as $d) {
+                $dias = is_array($d->dias_semana) ? $d->dias_semana : [];
+                if (! in_array($dow, $dias, true)) continue;
+                $porMes[$ym]['horas_disponiveis'] += $this->diffHoras($d->horario_inicial, $d->horario_final) * max(1, $qtdAtiva);
+            }
+
+            $iter += 86400;
+        }
+
+        // Horas reservadas por mês
+        $reservas = DB::table('reserva_recurso as rr')
+            ->join('reservas as r', 'r.id', '=', 'rr.reserva_id')
+            ->where('rr.recurso_id', $recurso->id)
+            ->where('r.status', '!=', 'cancelada')
+            ->where('r.data_inicial', '<=', $df)
+            ->where('r.data_final', '>=', $di)
+            ->get(['r.data_inicial', 'r.data_final', 'r.horario_inicial', 'r.horario_final', 'rr.quantidade']);
+        foreach ($reservas as $r) {
+            $dur = $this->diffHoras($r->horario_inicial, $r->horario_final);
+            $t = max(strtotime($r->data_inicial), strtotime($di));
+            $fim = min(strtotime($r->data_final), $end);
+            while ($t <= $fim) {
+                $ym = date('Y-m', $t);
+                $porMes[$ym] ??= ['mes' => $ym, 'horas_disponiveis' => 0.0, 'horas_reservadas' => 0.0];
+                $porMes[$ym]['horas_reservadas'] += $dur * (int) $r->quantidade;
+                $t += 86400;
+            }
+        }
+
+        ksort($porMes);
+        $linhas = array_map(function ($m) {
+            $pct = $m['horas_disponiveis'] > 0 ? round(100 * $m['horas_reservadas'] / $m['horas_disponiveis'], 1) : null;
+            return [
+                'mes' => $m['mes'],
+                'horas_disponiveis' => round($m['horas_disponiveis'], 2),
+                'horas_reservadas' => round($m['horas_reservadas'], 2),
+                'ocupacao_pct' => $pct,
+                'sobrealocado' => $pct !== null && $pct > 100,
+            ];
+        }, array_values($porMes));
+
+        if ($format === 'csv') {
+            return $this->csvStream("recurso-{$recurso->id}-ocupacao.csv",
+                ['Mês', 'Horas disponíveis', 'Horas reservadas', 'Ocupação (%)', 'Sobrealocado?'],
+                collect($linhas)->map(fn ($l) => [$l['mes'], $l['horas_disponiveis'], $l['horas_reservadas'], $l['ocupacao_pct'] ?? '', $l['sobrealocado'] ? 'sim' : 'não']),
+            );
+        }
+
+        return response()->json(['periodo' => ['inicio' => $di, 'fim' => $df], 'linhas' => $linhas]);
+    }
+
+    public function relatorioUnidades(Recurso $recurso, Request $request)
+    {
+        $this->authorize('view', $recurso);
+        [$di, $df, $format] = $this->relatorioParams($request);
+
+        $unidades = $recurso->unidades()->orderBy('patrimonio')->get();
+        $qtdAtiva = $unidades->where('status', 'ativo')->count();
+
+        $totalHorasRecurso = DB::table('reserva_recurso as rr')
+            ->join('reservas as r', 'r.id', '=', 'rr.reserva_id')
+            ->where('rr.recurso_id', $recurso->id)
+            ->where('r.status', '!=', 'cancelada')
+            ->where('r.data_inicial', '<=', $df)
+            ->where('r.data_final', '>=', $di)
+            ->get(['r.data_inicial', 'r.data_final', 'r.horario_inicial', 'r.horario_final', 'rr.quantidade'])
+            ->sum(function ($r) use ($di, $df) {
+                $dias = 0;
+                $t = max(strtotime($r->data_inicial), strtotime($di));
+                $fim = min(strtotime($r->data_final), strtotime($df));
+                while ($t <= $fim) { $dias++; $t += 86400; }
+                return $this->diffHoras($r->horario_inicial, $r->horario_final) * $dias * (int) $r->quantidade;
+            });
+
+        $porUnidade = $qtdAtiva > 0 ? $totalHorasRecurso / $qtdAtiva : 0;
+
+        $linhas = $unidades->map(fn ($u) => [
+            'unidade_id' => (string) $u->id,
+            'patrimonio' => $u->patrimonio,
+            'status' => $u->status,
+            'horas_alocadas_estimadas' => $u->status === 'ativo' ? round($porUnidade, 2) : 0,
+            'observacoes' => $u->observacoes,
+        ])->all();
+
+        if ($format === 'csv') {
+            return $this->csvStream("recurso-{$recurso->id}-unidades.csv",
+                ['Patrimônio', 'Status', 'Horas alocadas (estimado)', 'Observações'],
+                collect($linhas)->map(fn ($l) => [$l['patrimonio'], $l['status'], $l['horas_alocadas_estimadas'], $l['observacoes']]),
+            );
+        }
+
+        return response()->json([
+            'periodo' => ['inicio' => $di, 'fim' => $df],
+            'total_horas_recurso' => round($totalHorasRecurso, 2),
+            'nota' => 'Horas por unidade são estimadas: dividem-se as horas totais igualmente entre unidades ativas.',
+            'linhas' => $linhas,
+        ]);
+    }
+
+    private function relatorioParams(Request $request): array
+    {
+        $data = $request->validate([
+            'data_inicial' => ['nullable', 'date'],
+            'data_final' => ['nullable', 'date'],
+            'format' => ['nullable', 'in:json,csv'],
+        ]);
+        $di = $data['data_inicial'] ?? now()->toDateString();
+        $df = $data['data_final'] ?? now()->addDays(90)->toDateString();
+        $format = $data['format'] ?? 'json';
+        return [$di, $df, $format];
+    }
+
+    private function diffHoras(string $hi, string $hf): float
+    {
+        $a = strtotime("1970-01-01 {$hi}");
+        $b = strtotime("1970-01-01 {$hf}");
+        return max(0, ($b - $a) / 3600);
+    }
+
+    private function csvStream(string $filename, array $header, $rows)
+    {
+        return response()->streamDownload(function () use ($header, $rows) {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF"); // BOM utf-8 para Excel
+            fputcsv($out, $header);
+            foreach ($rows as $r) fputcsv($out, $r);
+            fclose($out);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
     /**
      * Para uma nova quantidade hipotética, retorna a lista sugerida de
      * reservas que precisam perder o vínculo com o recurso. Sorteio

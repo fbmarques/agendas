@@ -159,6 +159,33 @@ Recurso.previewRemocaoUnidade = (id, unidadeId) =>
   request("POST", `/recursos/${id}/unidades/${unidadeId}/preview-remocao`);
 Recurso.confirmarRemocaoUnidade = (id, unidadeId, payload) =>
   request("POST", `/recursos/${id}/unidades/${unidadeId}/confirmar-remocao`, payload);
+Recurso.relatorioReservas = (id, params = {}) =>
+  request("GET", `/recursos/${id}/relatorio/reservas${qs(params)}`);
+Recurso.relatorioOcupacao = (id, params = {}) =>
+  request("GET", `/recursos/${id}/relatorio/ocupacao${qs(params)}`);
+Recurso.relatorioUnidades = (id, params = {}) =>
+  request("GET", `/recursos/${id}/relatorio/unidades${qs(params)}`);
+Recurso.baixarCsv = async (id, tipo, params = {}) => {
+  const token = getToken();
+  const url = `${API_BASE}/recursos/${id}/relatorio/${tipo}${qs({ ...params, format: "csv" })}`;
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}`, Accept: "text/csv" } : { Accept: "text/csv" },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `recurso-${id}-${tipo}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+};
+
+function qs(params) {
+  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== "");
+  return entries.length ? "?" + new URLSearchParams(entries).toString() : "";
+}
 
 export const base44 = {
   auth,

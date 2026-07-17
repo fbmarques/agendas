@@ -93,6 +93,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('recursos/{recurso}/unidades/{unidade}', [RecursoController::class, 'atualizarUnidade']);
     Route::post('recursos/{recurso}/unidades/{unidade}/preview-remocao', [RecursoController::class, 'previewRemocaoUnidade']);
     Route::post('recursos/{recurso}/unidades/{unidade}/confirmar-remocao', [RecursoController::class, 'confirmarRemocaoUnidade']);
+    Route::get('recursos/{recurso}/relatorio/reservas', [RecursoController::class, 'relatorioReservas']);
+    Route::get('recursos/{recurso}/relatorio/ocupacao', [RecursoController::class, 'relatorioOcupacao']);
+    Route::get('recursos/{recurso}/relatorio/unidades', [RecursoController::class, 'relatorioUnidades']);
     Route::post('recursos', [RecursoController::class, 'store']);
     Route::put('recursos/{recurso}', [RecursoController::class, 'update']);
     Route::patch('recursos/{recurso}', [RecursoController::class, 'update']);

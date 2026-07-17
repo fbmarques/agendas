@@ -326,6 +326,9 @@ export default function Admin() {
                   })}
                 </div>
               </div>
+              <div className="mt-6">
+                <RelatorioRecursos recursos={recursos} />
+              </div>
             </div>
           )}
           {section === "config" && (
@@ -1046,6 +1049,191 @@ function RecursoForm({ item, onSaved }) {
       </div>
 
       <DialogFooter><Button variant="outline" onClick={onSaved}>Cancelar</Button><Button className="bg-blue-600" onClick={save}>Salvar</Button></DialogFooter>
+    </div>
+  );
+}
+
+function RelatorioRecursos({ recursos }) {
+  const [recursoId, setRecursoId] = useState("");
+  const [dataInicial, setDataInicial] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [dataFinal, setDataFinal] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 90);
+    return format(d, "yyyy-MM-dd");
+  });
+  const [aba, setAba] = useState("reservas");
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+
+  useEffect(() => {
+    if (!recursoId) { setDados(null); return; }
+    setCarregando(true);
+    setErro(null);
+    const params = { data_inicial: dataInicial, data_final: dataFinal };
+    const p =
+      aba === "reservas" ? base44.entities.Recurso.relatorioReservas(recursoId, params) :
+      aba === "ocupacao" ? base44.entities.Recurso.relatorioOcupacao(recursoId, params) :
+                           base44.entities.Recurso.relatorioUnidades(recursoId, params);
+    let cancel = false;
+    p.then((d) => { if (!cancel) setDados(d); })
+      .catch((e) => { if (!cancel) setErro(e?.message || "Erro ao carregar"); })
+      .finally(() => { if (!cancel) setCarregando(false); });
+    return () => { cancel = true; };
+  }, [recursoId, dataInicial, dataFinal, aba]);
+
+  const baixarCsv = async () => {
+    try {
+      await base44.entities.Recurso.baixarCsv(recursoId, aba, { data_inicial: dataInicial, data_final: dataFinal });
+    } catch (e) {
+      alert(e?.message || "Erro ao baixar CSV");
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex flex-wrap items-end gap-3">
+        <div className="min-w-[180px]">
+          <Label className="text-xs">Recurso</Label>
+          <Select value={recursoId} onValueChange={setRecursoId}>
+            <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+            <SelectContent>
+              {recursos.map((r) => <SelectItem key={r.id} value={r.id}>{r.nome}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs">De</Label>
+          <Input type="date" className="h-9" value={dataInicial} onChange={(e) => setDataInicial(e.target.value)} />
+        </div>
+        <div>
+          <Label className="text-xs">Até</Label>
+          <Input type="date" className="h-9" value={dataFinal} onChange={(e) => setDataFinal(e.target.value)} />
+        </div>
+        <Button variant="outline" size="sm" onClick={baixarCsv} disabled={!recursoId}>Exportar CSV</Button>
+      </div>
+
+      <div className="mb-3 flex gap-1 rounded-lg bg-slate-100 p-1 w-fit">
+        {[
+          { key: "reservas", label: "Reservas" },
+          { key: "ocupacao", label: "Ocupação" },
+          { key: "unidades", label: "Unidades" },
+        ].map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setAba(t.key)}
+            className={`rounded-md px-3 py-1 text-xs font-medium ${aba === t.key ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {!recursoId && <p className="text-sm text-slate-400">Selecione um recurso para ver o relatório.</p>}
+      {carregando && <p className="text-sm text-slate-400">Carregando...</p>}
+      {erro && <p className="text-sm text-red-600">{erro}</p>}
+      {dados && aba === "reservas" && <RelatorioReservasTabela linhas={dados.linhas || []} />}
+      {dados && aba === "ocupacao" && <RelatorioOcupacaoTabela linhas={dados.linhas || []} />}
+      {dados && aba === "unidades" && <RelatorioUnidadesTabela dados={dados} />}
+    </div>
+  );
+}
+
+function RelatorioReservasTabela({ linhas }) {
+  if (linhas.length === 0) return <p className="text-sm text-slate-400">Sem reservas no período.</p>;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead className="border-b border-slate-200 text-left text-slate-600">
+          <tr>
+            <th className="py-2 pr-3">Título</th>
+            <th className="py-2 pr-3">Data</th>
+            <th className="py-2 pr-3">Horário</th>
+            <th className="py-2 pr-3">Qtd</th>
+            <th className="py-2 pr-3">Usuário</th>
+            <th className="py-2 pr-3">Local</th>
+          </tr>
+        </thead>
+        <tbody>
+          {linhas.map((l) => (
+            <tr key={l.reserva_id} className="border-b border-slate-100">
+              <td className="py-1.5 pr-3 font-medium text-slate-800">{l.titulo}</td>
+              <td className="py-1.5 pr-3">{l.data_inicial}{l.data_final !== l.data_inicial ? ` → ${l.data_final}` : ""}</td>
+              <td className="py-1.5 pr-3">{l.horario}</td>
+              <td className="py-1.5 pr-3">{l.quantidade}</td>
+              <td className="py-1.5 pr-3 text-slate-600">{l.usuario || "—"}</td>
+              <td className="py-1.5 pr-3 text-slate-600">{l.local || "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RelatorioOcupacaoTabela({ linhas }) {
+  if (linhas.length === 0) return <p className="text-sm text-slate-400">Sem dados de ocupação.</p>;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead className="border-b border-slate-200 text-left text-slate-600">
+          <tr>
+            <th className="py-2 pr-3">Mês</th>
+            <th className="py-2 pr-3">Horas disponíveis</th>
+            <th className="py-2 pr-3">Horas reservadas</th>
+            <th className="py-2 pr-3">Ocupação</th>
+          </tr>
+        </thead>
+        <tbody>
+          {linhas.map((l) => (
+            <tr key={l.mes} className="border-b border-slate-100">
+              <td className="py-1.5 pr-3 font-medium text-slate-800">{l.mes}</td>
+              <td className="py-1.5 pr-3">{l.horas_disponiveis}</td>
+              <td className="py-1.5 pr-3">{l.horas_reservadas}</td>
+              <td className="py-1.5 pr-3">
+                {l.ocupacao_pct !== null ? `${l.ocupacao_pct}%` : "—"}
+                {l.sobrealocado && <span className="ml-1 rounded bg-red-100 px-1 text-[10px] text-red-700">sobrealocado</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RelatorioUnidadesTabela({ dados }) {
+  const linhas = dados.linhas || [];
+  return (
+    <div>
+      {dados.nota && <p className="mb-2 text-[11px] text-slate-500">{dados.nota}</p>}
+      {linhas.length === 0 ? <p className="text-sm text-slate-400">Nenhuma unidade cadastrada.</p> : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="border-b border-slate-200 text-left text-slate-600">
+              <tr>
+                <th className="py-2 pr-3">Patrimônio</th>
+                <th className="py-2 pr-3">Status</th>
+                <th className="py-2 pr-3">Horas alocadas (estim.)</th>
+                <th className="py-2 pr-3">Observações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.map((l) => (
+                <tr key={l.unidade_id} className="border-b border-slate-100">
+                  <td className="py-1.5 pr-3 font-medium text-slate-800">{l.patrimonio}</td>
+                  <td className="py-1.5 pr-3">
+                    <span className={`rounded px-2 py-0.5 text-[10px] ${l.status === "ativo" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{l.status}</span>
+                  </td>
+                  <td className="py-1.5 pr-3">{l.horas_alocadas_estimadas}</td>
+                  <td className="py-1.5 pr-3 text-slate-500">{l.observacoes || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
