@@ -296,7 +296,10 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => setForm({ ...form, data_inicial: p.data_inicio, data_final: p.data_fim })}
+                    onClick={() => {
+                      setForm({ ...form, data_inicial: p.data_inicio, data_final: p.data_fim });
+                      setTipoReserva("recorrente");
+                    }}
                     className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:border-blue-300 hover:bg-blue-50"
                     title={`${p.data_inicio} → ${p.data_fim}`}
                   >
@@ -304,7 +307,7 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
                   </button>
                 ))}
               </div>
-              <p className="mt-1 text-[11px] text-slate-400">Clique em um semestre para preencher as datas de início e fim automaticamente.</p>
+              <p className="mt-1 text-[11px] text-slate-400">Clique em um semestre para preencher as datas e ativar a reserva recorrente. Depois escolha os dias da semana e horários.</p>
             </div>
           )}
 
