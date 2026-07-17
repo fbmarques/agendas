@@ -150,6 +150,7 @@ const Recurso = makeEntity("recursos");
 Recurso.verificarDisponibilidade = (id, payload) =>
   request("POST", `/recursos/${id}/verificar-disponibilidade`, payload);
 Recurso.agenda = (id) => request("GET", `/recursos/${id}/agenda`);
+Recurso.disponiveis = (payload) => request("POST", "/recursos/disponiveis", payload);
 Recurso.unidades = (id) => request("GET", `/recursos/${id}/unidades`);
 Recurso.criarUnidade = (id, payload) => request("POST", `/recursos/${id}/unidades`, payload);
 Recurso.atualizarUnidade = (id, unidadeId, payload) =>

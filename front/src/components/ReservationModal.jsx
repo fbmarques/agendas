@@ -36,9 +36,6 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
     base44.entities.Periodo.list()
       .then((list) => setPeriodos((list || []).filter((p) => p.status === "ativo")))
       .catch(() => {});
-    base44.entities.Recurso.list()
-      .then((list) => setRecursosDisponiveis((list || []).filter((r) => r.status === "ativo")))
-      .catch(() => {});
   }, []);
 
   // Reseta o form toda vez que o modal abre, aplicando os pré-preenchimentos
@@ -92,6 +89,53 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
     });
     return occ;
   }, [form.data_inicial, form.data_final, diasRecorrente]);
+
+  // Consulta recursos com saldo real na janela escolhida. Reroda sempre que
+  // datas/horários/dias mudam. Se faltar informação para calcular, esvazia
+  // a lista (a seção "Recursos adicionais" some).
+  useEffect(() => {
+    let payload = null;
+    if (tipoReserva === "unica") {
+      if (form.data_inicial && form.data_final && form.horario_inicial && form.horario_final && form.horario_inicial < form.horario_final) {
+        payload = { ocorrencias: [{
+          data_inicial: form.data_inicial,
+          data_final: form.data_final,
+          horario_inicial: form.horario_inicial,
+          horario_final: form.horario_final,
+        }] };
+      }
+    } else {
+      const occ = gerarOcorrencias();
+      if (occ.length > 0) {
+        payload = { ocorrencias: occ.map((o) => ({
+          data_inicial: o.date, data_final: o.date,
+          horario_inicial: o.horario_inicial, horario_final: o.horario_final,
+        })) };
+      }
+    }
+
+    if (!payload) {
+      setRecursosDisponiveis([]);
+      return;
+    }
+    let cancel = false;
+    base44.entities.Recurso.disponiveis(payload)
+      .then((list) => { if (!cancel) setRecursosDisponiveis(list || []); })
+      .catch(() => { if (!cancel) setRecursosDisponiveis([]); });
+    return () => { cancel = true; };
+  }, [tipoReserva, form.data_inicial, form.data_final, form.horario_inicial, form.horario_final, gerarOcorrencias]);
+
+  // Se um recurso selecionado saiu da lista disponível, remove-o da seleção.
+  useEffect(() => {
+    setRecursosSelecionados((prev) => {
+      const ids = new Set(recursosDisponiveis.map((r) => String(r.id)));
+      const next = {};
+      Object.entries(prev).forEach(([id, q]) => {
+        if (ids.has(String(id))) next[id] = q;
+      });
+      return next;
+    });
+  }, [recursosDisponiveis]);
 
   // Single reservation conflict check
   const conflito = useMemo(() => {
@@ -393,9 +437,10 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
           {recursosDisponiveis.length > 0 && (
             <div>
               <Label className="mb-1.5">Recursos adicionais</Label>
-              <p className="mb-2 text-xs text-slate-400">Selecione os recursos e a quantidade. O sistema valida a disponibilidade.</p>
+              <p className="mb-2 text-xs text-slate-400">Selecione os recursos e a quantidade. Os saldos abaixo já consideram a janela e as reservas concorrentes.</p>
               <div className="space-y-1 rounded-lg border border-slate-200 p-2">
                 {recursosDisponiveis.map((rec) => {
+                  const saldo = rec.saldo_minimo || 0;
                   const qtd = recursosSelecionados[rec.id] || 0;
                   return (
                     <div key={rec.id} className="flex items-center gap-2 rounded px-1 py-1 hover:bg-slate-50">
@@ -410,14 +455,14 @@ export default function ReservationModal({ open, onClose, onCreated, campi, grup
                         })}
                       />
                       <span className="flex-1 text-sm text-slate-700">{rec.nome}</span>
-                      <span className="text-xs text-slate-400">até {rec.quantidade}</span>
+                      <span className="text-xs text-slate-400">saldo {saldo}</span>
                       <Input
                         type="number"
                         min={1}
-                        max={rec.quantidade}
+                        max={saldo}
                         value={qtd || ""}
                         disabled={qtd === 0}
-                        onChange={(e) => setRecursosSelecionados((prev) => ({ ...prev, [rec.id]: Math.max(1, Math.min(rec.quantidade, parseInt(e.target.value, 10) || 1)) }))}
+                        onChange={(e) => setRecursosSelecionados((prev) => ({ ...prev, [rec.id]: Math.max(1, Math.min(saldo, parseInt(e.target.value, 10) || 1)) }))}
                         className="h-8 w-16 text-xs"
                       />
                     </div>

@@ -125,6 +125,42 @@ class RecursoController extends Controller
         return JsonResource::collection($reservas);
     }
 
+    public function disponiveis(Request $request, RecursoDisponibilidadeService $svc): JsonResponse
+    {
+        $data = $request->validate([
+            'ocorrencias' => ['required', 'array', 'min:1'],
+            'ocorrencias.*.data_inicial' => ['required', 'date'],
+            'ocorrencias.*.data_final' => ['required', 'date', 'after_or_equal:ocorrencias.*.data_inicial'],
+            'ocorrencias.*.horario_inicial' => ['required', 'date_format:H:i'],
+            'ocorrencias.*.horario_final' => ['required', 'date_format:H:i'],
+        ]);
+
+        $recursos = Recurso::with('disponibilidades')
+            ->withCount('unidadesAtivas')
+            ->where('status', 'ativo')
+            ->orderBy('nome')
+            ->get();
+
+        $out = [];
+        foreach ($recursos as $r) {
+            $min = PHP_INT_MAX;
+            foreach ($data['ocorrencias'] as $o) {
+                $saldo = $svc->saldoNaJanela($r->id, $o['data_inicial'], $o['data_final'], $o['horario_inicial'], $o['horario_final']);
+                if ($saldo < $min) $min = $saldo;
+                if ($min <= 0) break;
+            }
+            if ($min > 0) {
+                $out[] = [
+                    'id' => (string) $r->id,
+                    'nome' => $r->nome,
+                    'saldo_minimo' => $min,
+                ];
+            }
+        }
+
+        return response()->json($out);
+    }
+
     public function listarUnidades(Recurso $recurso): JsonResource
     {
         $this->authorize('view', $recurso);

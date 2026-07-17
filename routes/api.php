@@ -84,6 +84,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('indisponibilidades/{indisponibilidade}', [LocalIndisponibilidadeController::class, 'destroy']);
 
     Route::get('recursos', [RecursoController::class, 'index']);
+    Route::post('recursos/disponiveis', [RecursoController::class, 'disponiveis']);
     Route::get('recursos/{recurso}', [RecursoController::class, 'show']);
     Route::get('recursos/{recurso}/agenda', [RecursoController::class, 'agenda']);
     Route::post('recursos/{recurso}/verificar-disponibilidade', [RecursoController::class, 'verificarDisponibilidade']);
