@@ -777,11 +777,47 @@ function RecursoForm({ item, onSaved }) {
   const [unidades, setUnidades] = useState([]);
   const [novaUnidade, setNovaUnidade] = useState({ patrimonio: "", observacoes: "" });
   const [erroUnidade, setErroUnidade] = useState(null);
+  const [removerAlvo, setRemoverAlvo] = useState(null); // { unidade, preview, marcadas: Set(id), motivo, salvando }
 
   useEffect(() => {
     if (!editMode) return;
     base44.entities.Recurso.unidades(item.id).then(setUnidades).catch(() => setUnidades([]));
   }, [editMode, item?.id]);
+
+  const abrirRemocao = async (u) => {
+    try {
+      const preview = await base44.entities.Recurso.previewRemocaoUnidade(item.id, u.id);
+      const marcadas = new Set((preview.afetadas || []).map((a) => String(a.reserva_id)));
+      setRemoverAlvo({ unidade: u, preview, marcadas, motivo: "", salvando: false });
+    } catch (e) {
+      setErroUnidade(e?.data?.message || e?.message || "Erro ao computar o preview.");
+    }
+  };
+  const toggleMarcada = (rid) => {
+    setRemoverAlvo((prev) => {
+      const m = new Set(prev.marcadas);
+      const key = String(rid);
+      if (m.has(key)) m.delete(key); else m.add(key);
+      return { ...prev, marcadas: m };
+    });
+  };
+  const confirmarRemocao = async () => {
+    setRemoverAlvo((prev) => ({ ...prev, salvando: true }));
+    try {
+      const ids = [...removerAlvo.marcadas].map((s) => parseInt(s, 10));
+      await base44.entities.Recurso.confirmarRemocaoUnidade(item.id, removerAlvo.unidade.id, {
+        reserva_ids_desvincular: ids,
+        motivo: removerAlvo.motivo || null,
+      });
+      // recarrega unidades
+      const list = await base44.entities.Recurso.unidades(item.id);
+      setUnidades(list);
+      setRemoverAlvo(null);
+    } catch (e) {
+      setErroUnidade(e?.data?.message || e?.message || "Erro ao confirmar remoção.");
+      setRemoverAlvo((prev) => ({ ...prev, salvando: false }));
+    }
+  };
 
   const addJanela = () => setForm({ ...form, disponibilidades: [...form.disponibilidades, { dias_semana: [], horario_inicial: "", horario_final: "" }] });
   const removeJanela = (i) => setForm({ ...form, disponibilidades: form.disponibilidades.filter((_, idx) => idx !== i) });
@@ -894,23 +930,82 @@ function RecursoForm({ item, onSaved }) {
         </p>
 
         {editMode ? (
-          <div className="mb-2 space-y-1">
-            {unidades.length === 0 && <p className="text-xs text-slate-400">Nenhuma unidade cadastrada.</p>}
-            {unidades.map((u) => (
-              <div key={u.id} className="flex items-center gap-2 rounded border border-slate-100 px-2 py-1 text-xs">
-                <span className={`inline-block h-2 w-2 rounded-full ${u.status === "ativo" ? "bg-green-500" : "bg-slate-300"}`} />
-                <span className="font-medium text-slate-700">{u.patrimonio}</span>
-                {u.observacoes && <span className="text-slate-400">— {u.observacoes}</span>}
-                <button
-                  type="button"
-                  onClick={() => toggleStatusUnidade(u)}
-                  className="ml-auto rounded border border-slate-200 px-2 py-0.5 text-[10px] font-medium hover:bg-slate-50"
-                >
-                  {u.status === "ativo" ? "Inativar" : "Ativar"}
-                </button>
+          removerAlvo ? (
+            <div className="mb-2 space-y-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs">
+              <div className="font-semibold text-amber-800">Remover unidade "{removerAlvo.unidade.patrimonio}"</div>
+              <div className="text-amber-700">
+                Quantidade antes: {removerAlvo.preview.resumo.quantidade_antes} → depois: {removerAlvo.preview.resumo.quantidade_depois}.
+                {" "}Reservas em conflito (marcadas serão desvinculadas e notificadas):
               </div>
-            ))}
-          </div>
+              {(removerAlvo.preview.afetadas || []).length === 0 ? (
+                <div className="text-slate-500">Nenhuma reserva futura precisa perder o vínculo.</div>
+              ) : (
+                <div className="max-h-40 space-y-1 overflow-y-auto rounded border border-amber-100 bg-white p-1">
+                  {removerAlvo.preview.afetadas.map((a) => (
+                    <label key={a.reserva_id} className="flex items-start gap-2 rounded px-1 py-1 hover:bg-amber-50">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={removerAlvo.marcadas.has(String(a.reserva_id))}
+                        onChange={() => toggleMarcada(a.reserva_id)}
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium text-slate-700">{a.titulo}</div>
+                        <div className="text-[10px] text-slate-500">
+                          {a.data_inicial}{a.data_final !== a.data_inicial ? ` → ${a.data_final}` : ""} · {a.horario} · qtd {a.quantidade}
+                          {a.usuario ? ` · ${a.usuario}` : ""}{a.local ? ` · ${a.local}` : ""}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <div>
+                <Label className="text-[11px] text-amber-800">Motivo (opcional, vai no e-mail)</Label>
+                <Input
+                  className="h-8 text-xs"
+                  placeholder="Ex.: unidade quebrada — em manutenção"
+                  value={removerAlvo.motivo}
+                  onChange={(e) => setRemoverAlvo({ ...removerAlvo, motivo: e.target.value })}
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <Button size="sm" variant="outline" onClick={() => setRemoverAlvo(null)} disabled={removerAlvo.salvando}>Cancelar</Button>
+                <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={confirmarRemocao} disabled={removerAlvo.salvando}>
+                  {removerAlvo.salvando ? "Removendo..." : "Confirmar remoção"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="mb-2 space-y-1">
+              {unidades.length === 0 && <p className="text-xs text-slate-400">Nenhuma unidade cadastrada.</p>}
+              {unidades.map((u) => (
+                <div key={u.id} className="flex items-center gap-2 rounded border border-slate-100 px-2 py-1 text-xs">
+                  <span className={`inline-block h-2 w-2 rounded-full ${u.status === "ativo" ? "bg-green-500" : "bg-slate-300"}`} />
+                  <span className="font-medium text-slate-700">{u.patrimonio}</span>
+                  {u.observacoes && <span className="text-slate-400">— {u.observacoes}</span>}
+                  <div className="ml-auto flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => toggleStatusUnidade(u)}
+                      className="rounded border border-slate-200 px-2 py-0.5 text-[10px] font-medium hover:bg-slate-50"
+                    >
+                      {u.status === "ativo" ? "Inativar" : "Ativar"}
+                    </button>
+                    {u.status === "ativo" && (
+                      <button
+                        type="button"
+                        onClick={() => abrirRemocao(u)}
+                        className="rounded border border-red-200 px-2 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-50"
+                      >
+                        Remover
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
         ) : (
           <div className="mb-2 space-y-1">
             {unidadesNovas.length === 0 && <p className="text-xs text-slate-400">Nenhuma unidade adicionada ainda.</p>}

@@ -155,6 +155,10 @@ Recurso.unidades = (id) => request("GET", `/recursos/${id}/unidades`);
 Recurso.criarUnidade = (id, payload) => request("POST", `/recursos/${id}/unidades`, payload);
 Recurso.atualizarUnidade = (id, unidadeId, payload) =>
   request("PATCH", `/recursos/${id}/unidades/${unidadeId}`, payload);
+Recurso.previewRemocaoUnidade = (id, unidadeId) =>
+  request("POST", `/recursos/${id}/unidades/${unidadeId}/preview-remocao`);
+Recurso.confirmarRemocaoUnidade = (id, unidadeId, payload) =>
+  request("POST", `/recursos/${id}/unidades/${unidadeId}/confirmar-remocao`, payload);
 
 export const base44 = {
   auth,

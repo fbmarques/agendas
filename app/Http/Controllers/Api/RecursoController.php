@@ -7,11 +7,15 @@ use App\Http\Requests\Api\StoreRecursoRequest;
 use App\Http\Requests\Api\UpdateRecursoRequest;
 use App\Models\Recurso;
 use App\Models\RecursoUnidade;
+use App\Models\Reserva;
+use App\Models\User;
+use App\Notifications\ReservaRecursoRemovido;
 use App\Services\RecursoDisponibilidadeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\Rule;
 
 class RecursoController extends Controller
@@ -206,5 +210,140 @@ class RecursoController extends Controller
 
         $unidade->update($data);
         return new JsonResource($unidade->fresh());
+    }
+
+    public function previewRemocaoUnidade(Recurso $recurso, RecursoUnidade $unidade): JsonResponse
+    {
+        $this->authorize('update', $recurso);
+        abort_unless($unidade->recurso_id === $recurso->id, 404);
+
+        $qtdAntes = $recurso->quantidade;
+        $qtdDepois = $unidade->status === 'ativo' ? max(0, $qtdAntes - 1) : $qtdAntes;
+
+        $afetadas = $this->calcularReservasParaDesvincular($recurso, $qtdDepois, $unidade->id);
+
+        return response()->json([
+            'unidade' => [
+                'id' => (string) $unidade->id,
+                'patrimonio' => $unidade->patrimonio,
+                'status' => $unidade->status,
+            ],
+            'resumo' => [
+                'quantidade_antes' => $qtdAntes,
+                'quantidade_depois' => $qtdDepois,
+                'reservas_afetadas' => count($afetadas),
+            ],
+            'afetadas' => $afetadas,
+        ]);
+    }
+
+    public function confirmarRemocaoUnidade(Request $request, Recurso $recurso, RecursoUnidade $unidade): JsonResponse
+    {
+        $this->authorize('update', $recurso);
+        abort_unless($unidade->recurso_id === $recurso->id, 404);
+
+        $data = $request->validate([
+            'reserva_ids_desvincular' => ['array'],
+            'reserva_ids_desvincular.*' => ['integer'],
+            'motivo' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $ids = $data['reserva_ids_desvincular'] ?? [];
+        $motivo = $data['motivo'] ?? null;
+
+        $reservasNotificadas = [];
+        DB::transaction(function () use ($recurso, $unidade, $ids, $motivo, &$reservasNotificadas) {
+            $reservas = Reserva::whereIn('id', $ids)
+                ->whereHas('recursos', fn ($q) => $q->where('recursos.id', $recurso->id))
+                ->get();
+
+            foreach ($reservas as $r) {
+                $r->recursos()->detach($recurso->id);
+                $reservasNotificadas[] = $r;
+            }
+
+            $unidade->update([
+                'status' => 'inativo',
+                'observacoes' => $motivo ?: $unidade->observacoes,
+            ]);
+        });
+
+        foreach ($reservasNotificadas as $reserva) {
+            $usuarios = collect([$reserva->user])->filter();
+            if ($usuarios->isNotEmpty()) {
+                Notification::send($usuarios, new ReservaRecursoRemovido($reserva, $recurso, $motivo));
+            }
+        }
+
+        return response()->json([
+            'unidade' => $unidade->fresh(),
+            'desvinculadas' => count($reservasNotificadas),
+        ]);
+    }
+
+    /**
+     * Para uma nova quantidade hipotética, retorna a lista sugerida de
+     * reservas que precisam perder o vínculo com o recurso. Sorteio
+     * determinístico usando seed = unidadeId para o preview ser reproduzível.
+     */
+    private function calcularReservasParaDesvincular(Recurso $recurso, int $novaQtd, int $seedId): array
+    {
+        $reservas = Reserva::whereHas('recursos', fn ($q) => $q->where('recursos.id', $recurso->id))
+            ->where('data_inicial', '>=', now()->toDateString())
+            ->where('status', '!=', 'cancelada')
+            ->with(['user', 'local'])
+            ->get()
+            ->keyBy('id');
+
+        if ($reservas->isEmpty()) return [];
+
+        $qtdPorReserva = DB::table('reserva_recurso')
+            ->where('recurso_id', $recurso->id)
+            ->whereIn('reserva_id', $reservas->keys())
+            ->pluck('quantidade', 'reserva_id');
+
+        // Agrupa por slot idêntico (data + horário)
+        $slots = [];
+        foreach ($reservas as $r) {
+            $key = "{$r->data_inicial->toDateString()}|{$r->data_final->toDateString()}|{$r->horario_inicial}|{$r->horario_final}";
+            $slots[$key][] = $r;
+        }
+
+        mt_srand($seedId);
+        $afetadas = [];
+        foreach ($slots as $rs) {
+            $total = 0;
+            foreach ($rs as $r) $total += (int) ($qtdPorReserva[$r->id] ?? 1);
+            if ($total <= $novaQtd) continue;
+
+            $precisaLiberar = $total - $novaQtd;
+
+            $ordem = collect($rs)->pluck('id')->all();
+            // Fisher-Yates com mt_rand pra determinismo
+            for ($i = count($ordem) - 1; $i > 0; $i--) {
+                $j = mt_rand(0, $i);
+                [$ordem[$i], $ordem[$j]] = [$ordem[$j], $ordem[$i]];
+            }
+
+            $liberado = 0;
+            foreach ($ordem as $id) {
+                if ($liberado >= $precisaLiberar) break;
+                $r = $reservas[$id];
+                $q = (int) ($qtdPorReserva[$id] ?? 1);
+                $afetadas[] = [
+                    'reserva_id' => (string) $r->id,
+                    'titulo' => $r->titulo,
+                    'data_inicial' => $r->data_inicial->toDateString(),
+                    'data_final' => $r->data_final->toDateString(),
+                    'horario' => substr($r->horario_inicial, 0, 5).' — '.substr($r->horario_final, 0, 5),
+                    'quantidade' => $q,
+                    'usuario' => $r->user?->full_name ?? $r->responsavel_nome,
+                    'local' => $r->local?->nome,
+                ];
+                $liberado += $q;
+            }
+        }
+
+        return $afetadas;
     }
 }
