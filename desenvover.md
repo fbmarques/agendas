@@ -1129,3 +1129,67 @@ Cada sub-fase é auto-contida e testável. 13.2/13.3/13.4 dependem apenas de 13.
 - **Preview vs Confirm**: sortear com seed determinística garante que o admin veja o mesmo sorteio se apenas clicar "recomputar"; a lista final vem no body do confirm, então mesmo se o admin editar, o backend usa o que ele mandou.
 - **CSV**: usar streamed response (`response()->streamDownload`) para evitar problemas de memória se o período for grande.
 - **Ocupação pode passar de 100%**: se o admin reduziu quantidade e ainda não desvinculou, o denominador cai. O relatório deve exibir "sobrealocado" nesse caso.
+
+---
+
+## 27. Fase 15 — Descentralizar o Cadastro de Recursos (planejado)
+
+### 27.1 Contexto
+
+Após a Fase 14, admin cria o recurso e escolhe gerentes. Na prática, o dono do recurso é quem tem contexto (patrimônios, janelas, quando um projetor quebra). Fluxo atual força o admin a ser gargalo pra qualquer criação/edição — não escala.
+
+**Decisão do usuário**: admin **não** deve mais criar recursos direto. Deve apenas **autorizar** usuários específicos a cadastrar recursos. Esses usuários autorizados criam e administram seus recursos (viram gerentes automaticamente). No Painel Admin, a seção "Recursos" deve deixar de ser CRUD e virar **relatório read-only** (lista global, filtros, ver detalhes/uso).
+
+### 27.2 Modelo de permissão
+
+Nova coluna `users.pode_cadastrar_recursos` (boolean, default false).
+
+- Admin marca/desmarca o flag na tela de usuários do Painel Admin.
+- Alternativa considerada e descartada: nova role (`gestor_recurso`) — mais burocrático e mistura de conceitos. Um simples boolean é suficiente porque o próprio recurso já carrega quem administra via `recurso_gerentes`.
+
+### 27.3 Fluxo de criação
+
+- Nova página fora do Painel Admin (algo como `/meus-recursos` ou aba no dashboard do usuário) só aparece pra quem tem `pode_cadastrar_recursos = true` ou é admin.
+- Ao criar recurso, o próprio criador vira gerente automaticamente (`gerentes()->attach($user->id)`).
+- Criador pode adicionar outros gerentes (só entre `users` que também têm `pode_cadastrar_recursos = true`? — ou qualquer usuário? decidir na hora da implementação, minha sugestão inicial é "qualquer usuário", coerente com a Fase 14).
+- Admin **também** pode criar recursos (não perder essa capacidade); apenas o fluxo padrão sai do Admin panel.
+
+### 27.4 Painel Admin, seção "Recursos"
+
+Vira relatório read-only:
+
+- Lista global de todos os recursos (nome, criador, quantidade de unidades, quantidade de gerentes, status, criado em).
+- Filtros: por status, por criador, por gerente.
+- Cada linha abre um modal com detalhes (dispon., unidades, gerentes, últimas reservas) — **sem** botões de editar/deletar.
+- A aba "Relatórios" (Fase 13.4) continua funcionando pra métricas por recurso.
+
+### 27.5 Impacto em políticas
+
+- `RecursoPolicy::create` passa a ser: `$user->isAdmin() || $user->pode_cadastrar_recursos`.
+- `RecursoPolicy::update`: já OK (admin OU gerente do recurso).
+- `RecursoPolicy::delete`: hoje é só admin. Considerar liberar pro criador quando o recurso não tem reservas futuras.
+- `RecursoPolicy::gerenciarGerentes`: hoje é só admin. Considerar liberar pro criador — decisão de UX (talvez o admin queira manter controle sobre quem administra o quê).
+
+### 27.6 UI
+
+- **Nova tela `MeusRecursos.jsx`** (front): CRUD dos recursos que o usuário criou/administra. Reaproveita o `RecursoForm` atual (que já suporta gerentes, unidades, disponibilidades) com apenas cosmetics diferentes.
+- **`Admin.jsx` — seção Recursos**: substituir `AdminTable` que hoje tem `onEdit`/`onDelete`/`renderForm` por uma tabela read-only + modal de "ver detalhes". A aba "Relatórios" (com o `RelatorioRecursos`) continua idêntica.
+- **`Admin.jsx` — seção Usuários**: cada linha ganha uma coluna "Cadastrar recursos" com um `Switch` que faz `PATCH /users/{id}` com `pode_cadastrar_recursos`.
+
+### 27.7 Migração de dados
+
+Backfill simples: recursos já existentes (criados via admin) continuam do jeito que estão. Ninguém perde acesso. Apenas o fluxo de criação futuro muda.
+
+### 27.8 Riscos e pontos de atenção
+
+- **Autor não fica gravado hoje**: `recursos` não tem `criado_por_id`. Adicionar essa coluna via migration (`nullable`, `foreignId users`) e populá-la a partir do primeiro gerente para os registros existentes (aproximação).
+- **Segurança do endpoint**: se o form de recurso não checar a policy `create`, qualquer usuário pode POSTar. Já está protegido — mas ao mover a UI, garantir que a autorização não seja "afrouxada".
+- **Quantidade de recursos**: se muitos usuários passarem a criar recursos livremente, o relatório do admin precisa de paginação / busca eficiente. Hoje o `Recurso::all()` do endpoint index carrega tudo em memória. Considerar paginação já nessa fase.
+
+### 27.9 Sub-fases sugeridas
+
+| Sub-fase | Objetivo                                                        | Commit                                                             |
+| -------- | --------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 15.1     | Coluna `users.pode_cadastrar_recursos` + policy + backfill autor | `feat(fase-15.1): permissão de cadastrar recursos por usuário`     |
+| 15.2     | Tela `MeusRecursos` + fluxo de criação fora do Admin            | `feat(fase-15.2): CRUD de recurso pelo próprio usuário autorizado` |
+| 15.3     | Admin Recursos vira relatório read-only + toggle no Users       | `feat(fase-15.3): Admin Recursos como relatório e toggle de permissão` |
