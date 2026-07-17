@@ -20,6 +20,22 @@ fi
 echo "pre-commit: mudanças no frontend detectadas, rodando 'npm run build'..."
 (cd "$REPO_ROOT/front" && npm run build --silent)
 
+# Remove bundles antigos do Vite (Vite roda com emptyOutDir=false para
+# preservar o resto de public/, então precisamos limpar manualmente).
+INDEX_HTML="$REPO_ROOT/public/index.html"
+ASSETS_DIR="$REPO_ROOT/public/assets"
+if [ -f "$INDEX_HTML" ] && [ -d "$ASSETS_DIR" ]; then
+    CURRENT="$(grep -oE 'index-[A-Za-z0-9_-]+\.(js|css)' "$INDEX_HTML" | sort -u)"
+    for f in "$ASSETS_DIR"/index-*.js "$ASSETS_DIR"/index-*.css; do
+        [ -f "$f" ] || continue
+        name="$(basename "$f")"
+        if ! echo "$CURRENT" | grep -qx "$name"; then
+            rm "$f"
+            echo "pre-commit: removido bundle obsoleto $name"
+        fi
+    done
+fi
+
 git add -A public/index.html public/assets
 
 echo "pre-commit: frontend recompilado e incluído no commit."
