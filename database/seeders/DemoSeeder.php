@@ -182,13 +182,21 @@ class DemoSeeder extends Seeder
                 [
                     'responsavel_nome' => $d['resp'],
                     'responsavel_email' => $d['email'],
-                    'quantidade' => $d['quantidade'],
                     'status' => 'ativo',
                 ],
             );
             if ($r->disponibilidades()->count() === 0) {
                 $r->disponibilidades()->create(['dias_semana' => [1,2,3,4,5], 'horario_inicial' => '08:00', 'horario_final' => '12:00']);
                 $r->disponibilidades()->create(['dias_semana' => [1,2,3,4,5], 'horario_inicial' => '14:00', 'horario_final' => '18:00']);
+            }
+            if ($r->unidades()->count() === 0) {
+                $prefixo = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $d['nome']), 0, 4));
+                for ($n = 1; $n <= $d['quantidade']; $n++) {
+                    $r->unidades()->create([
+                        'patrimonio' => sprintf('%s-%03d', $prefixo, $n),
+                        'status' => 'ativo',
+                    ]);
+                }
             }
             $out[] = $r;
         }

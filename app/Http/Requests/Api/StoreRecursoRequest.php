@@ -17,13 +17,15 @@ class StoreRecursoRequest extends FormRequest
             'nome' => ['required', 'string', 'max:255'],
             'responsavel_nome' => ['required', 'string', 'max:255'],
             'responsavel_email' => ['required', 'email', 'max:255'],
-            'quantidade' => ['required', 'integer', 'min:1'],
             'status' => ['nullable', 'in:ativo,inativo'],
             'disponibilidades' => ['nullable', 'array'],
             'disponibilidades.*.dias_semana' => ['required', 'array', 'min:1'],
             'disponibilidades.*.dias_semana.*' => ['integer', 'between:0,6'],
             'disponibilidades.*.horario_inicial' => ['required', 'date_format:H:i'],
             'disponibilidades.*.horario_final' => ['required', 'date_format:H:i', 'after:disponibilidades.*.horario_inicial'],
+            'unidades' => ['nullable', 'array'],
+            'unidades.*.patrimonio' => ['required', 'string', 'max:60', 'distinct'],
+            'unidades.*.observacoes' => ['nullable', 'string', 'max:500'],
         ];
     }
 }

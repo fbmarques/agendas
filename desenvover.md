@@ -986,3 +986,146 @@ Fases 8 e 9 têm dependência forte (email de aprovação/cancelamento pressupõ
 - **Recursos vs Locais**: recurso NÃO é local — não bloqueia a agenda do Local, apenas verifica se o recurso escolhido está livre. Um mesmo dia/horário no mesmo Local só pode ter uma reserva; um mesmo dia/horário pode consumir várias unidades do mesmo recurso, desde que respeite `recurso.quantidade`.
 - **Responsável de Recurso sem conta**: cobrir em fase futura (link mágico ou registro implícito). Por ora, exigir que o email do responsável corresponda a um `users.email`.
 - **Retrocompatibilidade**: reservas criadas antes da fase 8 ficam com `status='confirmada'`, `aprovada_por_id=null`, sem `motivo_cancelamento` — comportamento aceitável (não retroativo).
+
+---
+
+## 26. Fase 13 — Unidades (Patrimônio), Filtro Real de Recursos, Remoção Assistida e Relatório
+
+Depois da Fase 12 o cadastro de recurso funciona como um **balde** com `quantidade` inteira. A Fase 13 quebra esse balde em **unidades individuais** com código de patrimônio, torna o modal de reserva ciente da disponibilidade real, permite ao admin **remover uma unidade quebrada** com fluxo de revisão antes de enviar avisos, e adiciona um **relatório de uso** com três recortes + export CSV.
+
+### 26.1 Modelo de dados
+
+Nova tabela `recurso_unidades`:
+
+```
+id
+recurso_id (FK -> recursos, cascadeOnDelete)
+patrimonio (string, 60) — livre, único por recurso_id
+status (enum: 'ativo' | 'inativo') — default 'ativo'
+observacoes (text, nullable) — motivo da inativação, etc.
+timestamps
+UNIQUE (recurso_id, patrimonio)
+```
+
+- A coluna `recursos.quantidade` **passa a ser derivada**: `unidades()->where('status','ativo')->count()`. Removê-la do formulário e do payload de criação/atualização; manter a coluna no banco por retrocompatibilidade dos seeds antigos (populada por observer que sincroniza a cada change de unidade), mas o backend nunca mais lê dessa coluna para lógica.
+- Migração de dados (para quem já rodou a Fase 12): para cada recurso existente, criar N unidades com patrimônio `AUTO-{recurso_id}-{n}` — assim o schema fica coerente sem apagar nada.
+
+### 26.2 Filtro real de recursos no modal (Fase 13.2)
+
+Novo endpoint:
+
+```
+POST /api/recursos/disponiveis
+Body: {
+  local_id?: number,        // opcional (não bloqueia hoje, mas útil futuramente)
+  ocorrencias: [             // 1 item para reserva única; N para recorrente
+    { data_inicial, data_final, horario_inicial, horario_final }
+  ]
+}
+Resposta: [
+  { id, nome, saldo_minimo }   // saldo_minimo = menor saldo entre ocorrências
+]
+```
+
+- Backend itera pelos recursos ativos, chama `RecursoDisponibilidadeService::saldoNaJanela()` (novo método que retorna `int` em vez de `bool`), computa mínimo, e só inclui se `> 0`.
+- Modal chama esse endpoint sempre que `local_id + datas + horários` (ou o array de ocorrências, para recorrente) muda, com debounce curto.
+- Se `saldo_minimo > 0`: mostra "até N disponíveis" (N = saldo). Se lista vazia: seção "Recursos adicionais" some.
+- Ajustar o alerta verde: só diz "todas as ocorrências disponíveis" se o local **e** os recursos selecionados estão ok.
+
+### 26.3 CRUD de Unidades (Fase 13.1)
+
+Sub-rotas do recurso:
+
+```
+GET    /api/recursos/{recurso}/unidades
+POST   /api/recursos/{recurso}/unidades       { patrimonio, observacoes? }
+PATCH  /api/recursos/{recurso}/unidades/{id}  { patrimonio?, status?, observacoes? }
+```
+
+- Store: valida `patrimonio` único por `recurso_id`; cria com `status='ativo'`.
+- Update: pode reativar (`ativo`) ou apenas renomear patrimônio.
+- Não expõe `DELETE` — remoção real é feita pela rota da 13.4 (que dispara notificações).
+- UI: no formulário de recurso do Admin, uma nova seção "Unidades / Patrimônios" logo abaixo das disponibilidades, com input livre + botão adicionar + tabela.
+
+### 26.4 Remoção de unidade com revisão (Fase 13.3)
+
+Duas rotas em par:
+
+```
+POST /api/recursos/{recurso}/unidades/{id}/preview-remocao
+    Resposta: {
+      afetados: [
+        { reserva_id, titulo, data, horario, usuario, motivo_selecao: 'sorteio' }
+      ],
+      resumo: { slots_conflitantes: 3, reservas_afetadas: 3 }
+    }
+
+POST /api/recursos/{recurso}/unidades/{id}/confirmar-remocao
+    Body: { reserva_ids_desvincular: number[] }   // admin pode ajustar
+    Resposta: { unidade: {...}, desvinculadas: N }
+```
+
+- **preview-remocao**: sistema calcula, para cada slot (dia+horário) em que a soma de `quantidade` já reservada estava saturando a quantidade atual, quantas reservas precisam perder o recurso. Sorteio determinístico (seed = unidade_id) por reproducibilidade em preview vs confirm.
+- **confirmar-remocao**: dentro de uma transação:
+  1. Detach das reservas escolhidas em `reserva_recurso` (mantém `Reserva`, remove só o vínculo).
+  2. `RecursoUnidade->update(['status'=>'inativo', 'observacoes'=>...])`.
+  3. `Notification::send($usuarios, new ReservaRecursoRemovido($reserva, $recurso, $motivo))`.
+- A reserva do **local continua ativa** — o cancelamento é do vínculo, não da reserva.
+
+Nova notificação `ReservaRecursoRemovido` (ShouldQueue, MailMessage): "Sua reserva `X` no dia `dd/mm` teve o recurso `Som` removido porque uma unidade foi inativada. A reserva do local continua ativa."
+
+UI: na tabela de unidades, botão "Remover" abre modal que chama preview, mostra a lista de reservas afetadas com checkbox marcado, admin pode desmarcar/ajustar, botão "Confirmar remoção" chama confirmar-remocao.
+
+### 26.5 Relatório de uso (Fase 13.4)
+
+Três endpoints, todos aceitam `data_inicial` e `data_final` (defaults: hoje → +90 dias):
+
+```
+GET /api/recursos/{recurso}/relatorio/reservas?data_inicial&data_final&format=json|csv
+    → tabela: reserva_id, titulo, data, horario, local, usuario, quantidade
+
+GET /api/recursos/{recurso}/relatorio/ocupacao?data_inicial&data_final&format=json|csv
+    → por mês:  horas_reservadas, horas_disponiveis, ocupacao_pct
+
+GET /api/recursos/{recurso}/relatorio/unidades?data_inicial&data_final&format=json|csv
+    → por unidade: patrimonio, horas_alocadas_estimadas, status
+```
+
+- `format=csv`: retorna `text/csv` com headers apropriados, aproveitando as mesmas queries.
+- Ocupação: `horas_disponiveis` calculadas pelas disponibilidades (janelas seg-sex 08-12, etc.) × dias no período. `horas_reservadas` = soma das durações das reservas × quantidade reservada. Ocupação = razão × 100.
+- **Uso por unidade** é estimado, não real: as reservas se ligam ao recurso (não a uma unidade específica). O relatório distribui as horas reservadas do slot entre as unidades ativas proporcionalmente. Documentar essa limitação no cabeçalho da tabela.
+
+UI: nova aba "Relatórios" no Admin ao lado de "Recursos", com dropdown de recurso, dropdown de período, três abas (Reservas / Ocupação / Unidades) e botão CSV.
+
+### 26.6 Impacto no wrapper `base44Client.js`
+
+```js
+Recurso.disponiveis         = (payload) => request("POST", "/recursos/disponiveis", payload);
+Recurso.unidades            = (id) => request("GET", `/recursos/${id}/unidades`);
+Recurso.criarUnidade        = (id, body) => request("POST", `/recursos/${id}/unidades`, body);
+Recurso.atualizarUnidade    = (id, uid, body) => request("PATCH", `/recursos/${id}/unidades/${uid}`, body);
+Recurso.previewRemocao      = (id, uid) => request("POST", `/recursos/${id}/unidades/${uid}/preview-remocao`);
+Recurso.confirmarRemocao    = (id, uid, body) => request("POST", `/recursos/${id}/unidades/${uid}/confirmar-remocao`, body);
+Recurso.relatorioReservas   = (id, params) => request("GET", `/recursos/${id}/relatorio/reservas?${qs(params)}`);
+Recurso.relatorioOcupacao   = (id, params) => request("GET", `/recursos/${id}/relatorio/ocupacao?${qs(params)}`);
+Recurso.relatorioUnidades   = (id, params) => request("GET", `/recursos/${id}/relatorio/unidades?${qs(params)}`);
+```
+
+### 26.7 Ordem de execução
+
+| Sub-fase | Objetivo                                          | Commit                                                                                    |
+| -------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| 13.1     | Unidades + patrimônio + quantidade derivada       | `feat(fase-13.1): unidades de recurso com patrimônio`                                     |
+| 13.2     | Filtro real no modal de reserva                    | `feat(fase-13.2): filtra recursos por disponibilidade real`                               |
+| 13.3     | Remover unidade com preview + revisão + notif.     | `feat(fase-13.3): remoção assistida de unidade com desvinculação de reservas`             |
+| 13.4     | Relatório (reservas, ocupação, unidades) + CSV     | `feat(fase-13.4): relatório de uso de recursos com export CSV`                            |
+
+Cada sub-fase é auto-contida e testável. 13.2/13.3/13.4 dependem apenas de 13.1.
+
+### 26.8 Pontos de atenção específicos
+
+- **Coluna `recursos.quantidade`**: manter no banco, mas fazer o Model computar `getQuantidadeAttribute()` a partir de `unidades_ativas_count`. Assim JSON continua expondo `quantidade` sem quebrar consumidores. Observer opcional para sincronizar coluna física.
+- **Migração de dados dos seeds antigos**: rodar num `RecursoUnidadeBackfillSeeder` que só executa se `recurso_unidades` estiver vazio para recursos existentes; determinístico (patrimônio `AUTO-{id}-{n}`).
+- **Preview vs Confirm**: sortear com seed determinística garante que o admin veja o mesmo sorteio se apenas clicar "recomputar"; a lista final vem no body do confirm, então mesmo se o admin editar, o backend usa o que ele mandou.
+- **CSV**: usar streamed response (`response()->streamDownload`) para evitar problemas de memória se o período for grande.
+- **Ocupação pode passar de 100%**: se o admin reduziu quantidade e ainda não desvinculou, o denominador cai. O relatório deve exibir "sobrealocado" nesse caso.

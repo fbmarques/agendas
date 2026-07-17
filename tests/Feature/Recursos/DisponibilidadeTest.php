@@ -23,8 +23,10 @@ class DisponibilidadeTest extends TestCase
     {
         $r = Recurso::create([
             'nome' => 'Som', 'responsavel_nome' => 'Ana', 'responsavel_email' => 'ana@ex.test',
-            'quantidade' => $quantidade,
         ]);
+        for ($n = 1; $n <= $quantidade; $n++) {
+            $r->unidades()->create(['patrimonio' => "SOM-{$n}", 'status' => 'ativo']);
+        }
         $r->disponibilidades()->create(['dias_semana' => $dias, 'horario_inicial' => $hi, 'horario_final' => $hf]);
         return $r;
     }

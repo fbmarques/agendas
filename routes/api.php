@@ -87,6 +87,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('recursos/{recurso}', [RecursoController::class, 'show']);
     Route::get('recursos/{recurso}/agenda', [RecursoController::class, 'agenda']);
     Route::post('recursos/{recurso}/verificar-disponibilidade', [RecursoController::class, 'verificarDisponibilidade']);
+    Route::get('recursos/{recurso}/unidades', [RecursoController::class, 'listarUnidades']);
+    Route::post('recursos/{recurso}/unidades', [RecursoController::class, 'criarUnidade']);
+    Route::patch('recursos/{recurso}/unidades/{unidade}', [RecursoController::class, 'atualizarUnidade']);
     Route::post('recursos', [RecursoController::class, 'store']);
     Route::put('recursos/{recurso}', [RecursoController::class, 'update']);
     Route::patch('recursos/{recurso}', [RecursoController::class, 'update']);

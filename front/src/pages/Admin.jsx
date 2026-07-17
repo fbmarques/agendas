@@ -764,14 +764,24 @@ function RecursoForm({ item, onSaved }) {
   ];
   const initial = item ? {
     nome: item.nome, responsavel_nome: item.responsavel_nome, responsavel_email: item.responsavel_email,
-    quantidade: item.quantidade || 1, status: item.status || "ativo",
+    status: item.status || "ativo",
     disponibilidades: (item.disponibilidades || []).map((d) => ({
       dias_semana: d.dias_semana || [],
       horario_inicial: String(d.horario_inicial || "").slice(0, 5),
       horario_final: String(d.horario_final || "").slice(0, 5),
     })),
-  } : { nome: "", responsavel_nome: "", responsavel_email: "", quantidade: 1, status: "ativo", disponibilidades: [{ dias_semana: [1,2,3,4,5], horario_inicial: "08:00", horario_final: "12:00" }] };
+  } : { nome: "", responsavel_nome: "", responsavel_email: "", status: "ativo", disponibilidades: [{ dias_semana: [1,2,3,4,5], horario_inicial: "08:00", horario_final: "12:00" }] };
   const [form, setForm] = useState(initial);
+
+  const editMode = !!item?.id;
+  const [unidades, setUnidades] = useState([]);
+  const [novaUnidade, setNovaUnidade] = useState({ patrimonio: "", observacoes: "" });
+  const [erroUnidade, setErroUnidade] = useState(null);
+
+  useEffect(() => {
+    if (!editMode) return;
+    base44.entities.Recurso.unidades(item.id).then(setUnidades).catch(() => setUnidades([]));
+  }, [editMode, item?.id]);
 
   const addJanela = () => setForm({ ...form, disponibilidades: [...form.disponibilidades, { dias_semana: [], horario_inicial: "", horario_final: "" }] });
   const removeJanela = (i) => setForm({ ...form, disponibilidades: form.disponibilidades.filter((_, idx) => idx !== i) });
@@ -782,10 +792,50 @@ function RecursoForm({ item, onSaved }) {
     setJanela(i, { dias_semana: dias });
   };
 
-  const save = async () => {
-    const payload = { ...form, quantidade: parseInt(form.quantidade, 10) || 1 };
+  // Novas unidades enquanto o recurso ainda não existe (modo criação)
+  const [unidadesNovas, setUnidadesNovas] = useState([]);
+  const addUnidadeNova = () => {
+    if (!novaUnidade.patrimonio.trim()) return;
+    if (unidadesNovas.some((u) => u.patrimonio === novaUnidade.patrimonio.trim())) {
+      setErroUnidade("Patrimônio já adicionado.");
+      return;
+    }
+    setUnidadesNovas([...unidadesNovas, { ...novaUnidade, patrimonio: novaUnidade.patrimonio.trim() }]);
+    setNovaUnidade({ patrimonio: "", observacoes: "" });
+    setErroUnidade(null);
+  };
+  const removeUnidadeNova = (i) => setUnidadesNovas(unidadesNovas.filter((_, idx) => idx !== i));
+
+  // Unidades em modo edição — vão direto pra API
+  const addUnidadeExistente = async () => {
+    if (!novaUnidade.patrimonio.trim()) return;
     try {
-      if (item?.id) await base44.entities.Recurso.update(item.id, payload);
+      const u = await base44.entities.Recurso.criarUnidade(item.id, {
+        patrimonio: novaUnidade.patrimonio.trim(),
+        observacoes: novaUnidade.observacoes || null,
+      });
+      setUnidades([...unidades, u]);
+      setNovaUnidade({ patrimonio: "", observacoes: "" });
+      setErroUnidade(null);
+    } catch (e) {
+      setErroUnidade(e?.data?.message || e?.message || "Erro ao criar unidade.");
+    }
+  };
+  const toggleStatusUnidade = async (u) => {
+    const novoStatus = u.status === "ativo" ? "inativo" : "ativo";
+    try {
+      const upd = await base44.entities.Recurso.atualizarUnidade(item.id, u.id, { status: novoStatus });
+      setUnidades(unidades.map((x) => (x.id === u.id ? upd : x)));
+    } catch (e) {
+      setErroUnidade(e?.data?.message || e?.message || "Erro ao atualizar unidade.");
+    }
+  };
+
+  const save = async () => {
+    const payload = { ...form };
+    if (!editMode && unidadesNovas.length > 0) payload.unidades = unidadesNovas;
+    try {
+      if (editMode) await base44.entities.Recurso.update(item.id, payload);
       else await base44.entities.Recurso.create(payload);
       onSaved();
     } catch (e) {
@@ -800,14 +850,13 @@ function RecursoForm({ item, onSaved }) {
         <div><Label>Responsável *</Label><Input value={form.responsavel_nome} onChange={(e) => setForm({ ...form, responsavel_nome: e.target.value })} /></div>
         <div><Label>Email do responsável *</Label><Input type="email" value={form.responsavel_email} onChange={(e) => setForm({ ...form, responsavel_email: e.target.value })} /></div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div><Label>Quantidade *</Label><Input type="number" min="1" value={form.quantidade} onChange={(e) => setForm({ ...form, quantidade: e.target.value })} /></div>
-        <div><Label>Status</Label>
-          <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="ativo">Ativo</SelectItem><SelectItem value="inativo">Inativo</SelectItem></SelectContent>
-          </Select>
-        </div>
+      <div>
+        <Label>Status</Label>
+        <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="ativo">Ativo</SelectItem><SelectItem value="inativo">Inativo</SelectItem></SelectContent>
+        </Select>
+        <p className="mt-1 text-[11px] text-slate-400">Quantidade é calculada automaticamente pelo número de unidades ativas cadastradas abaixo.</p>
       </div>
 
       <div className="rounded-lg border border-slate-200 p-3">
@@ -836,6 +885,69 @@ function RecursoForm({ item, onSaved }) {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="rounded-lg border border-slate-200 p-3">
+        <Label className="text-sm font-medium text-slate-800">Unidades / Patrimônios</Label>
+        <p className="mb-2 text-[11px] text-slate-400">
+          Cadastre uma unidade por equipamento (patrimônio livre, ex: "PROJ-001"). Quantidade disponível = unidades ativas.
+        </p>
+
+        {editMode ? (
+          <div className="mb-2 space-y-1">
+            {unidades.length === 0 && <p className="text-xs text-slate-400">Nenhuma unidade cadastrada.</p>}
+            {unidades.map((u) => (
+              <div key={u.id} className="flex items-center gap-2 rounded border border-slate-100 px-2 py-1 text-xs">
+                <span className={`inline-block h-2 w-2 rounded-full ${u.status === "ativo" ? "bg-green-500" : "bg-slate-300"}`} />
+                <span className="font-medium text-slate-700">{u.patrimonio}</span>
+                {u.observacoes && <span className="text-slate-400">— {u.observacoes}</span>}
+                <button
+                  type="button"
+                  onClick={() => toggleStatusUnidade(u)}
+                  className="ml-auto rounded border border-slate-200 px-2 py-0.5 text-[10px] font-medium hover:bg-slate-50"
+                >
+                  {u.status === "ativo" ? "Inativar" : "Ativar"}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mb-2 space-y-1">
+            {unidadesNovas.length === 0 && <p className="text-xs text-slate-400">Nenhuma unidade adicionada ainda.</p>}
+            {unidadesNovas.map((u, i) => (
+              <div key={i} className="flex items-center gap-2 rounded border border-slate-100 px-2 py-1 text-xs">
+                <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
+                <span className="font-medium text-slate-700">{u.patrimonio}</span>
+                {u.observacoes && <span className="text-slate-400">— {u.observacoes}</span>}
+                <button type="button" onClick={() => removeUnidadeNova(i)} className="ml-auto text-red-500 hover:text-red-700"><Trash2 className="h-3.5 w-3.5" /></button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr,1fr,auto]">
+          <Input
+            className="h-8 text-xs"
+            placeholder="Patrimônio"
+            value={novaUnidade.patrimonio}
+            onChange={(e) => setNovaUnidade({ ...novaUnidade, patrimonio: e.target.value })}
+          />
+          <Input
+            className="h-8 text-xs"
+            placeholder="Observações (opcional)"
+            value={novaUnidade.observacoes}
+            onChange={(e) => setNovaUnidade({ ...novaUnidade, observacoes: e.target.value })}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={editMode ? addUnidadeExistente : addUnidadeNova}
+            disabled={!novaUnidade.patrimonio.trim()}
+          >
+            <Plus className="h-3.5 w-3.5" /> Unidade
+          </Button>
+        </div>
+        {erroUnidade && <p className="mt-1 text-xs text-red-600">{erroUnidade}</p>}
       </div>
 
       <DialogFooter><Button variant="outline" onClick={onSaved}>Cancelar</Button><Button className="bg-blue-600" onClick={save}>Salvar</Button></DialogFooter>

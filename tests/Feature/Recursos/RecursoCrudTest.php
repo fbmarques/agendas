@@ -55,4 +55,79 @@ class RecursoCrudTest extends TestCase
             'nome' => 'x', 'responsavel_nome' => 'x', 'responsavel_email' => 'x@x.com', 'quantidade' => 1,
         ])->assertStatus(403);
     }
+
+    public function test_cria_recurso_com_unidades_e_quantidade_deriva(): void
+    {
+        Sanctum::actingAs($this->admin());
+
+        $res = $this->postJson('/api/recursos', [
+            'nome' => 'Projetor',
+            'responsavel_nome' => 'Carla',
+            'responsavel_email' => 'carla@ex.test',
+            'unidades' => [
+                ['patrimonio' => 'PROJ-001'],
+                ['patrimonio' => 'PROJ-002', 'observacoes' => 'nova aquisição'],
+            ],
+        ]);
+
+        $res->assertStatus(201);
+        $r = Recurso::first();
+        $this->assertSame(2, $r->unidades()->count());
+        $this->assertSame(2, $r->quantidade); // accessor derivado
+    }
+
+    public function test_inativar_unidade_reduz_quantidade(): void
+    {
+        Sanctum::actingAs($this->admin());
+        $create = $this->postJson('/api/recursos', [
+            'nome' => 'Som', 'responsavel_nome' => 'A', 'responsavel_email' => 'a@ex.test',
+            'unidades' => [
+                ['patrimonio' => 'SOM-1'],
+                ['patrimonio' => 'SOM-2'],
+                ['patrimonio' => 'SOM-3'],
+            ],
+        ]);
+        $rid = $create->json('id');
+        $uid = $create->json('unidades.0.id');
+        $this->assertSame(3, Recurso::find($rid)->quantidade);
+
+        $this->patchJson("/api/recursos/{$rid}/unidades/{$uid}", ['status' => 'inativo'])
+            ->assertOk();
+
+        $this->assertSame(2, Recurso::find($rid)->quantidade);
+    }
+
+    public function test_patrimonio_repetido_no_mesmo_recurso_falha(): void
+    {
+        Sanctum::actingAs($this->admin());
+        $create = $this->postJson('/api/recursos', [
+            'nome' => 'Som', 'responsavel_nome' => 'A', 'responsavel_email' => 'a@ex.test',
+            'unidades' => [['patrimonio' => 'SOM-1']],
+        ]);
+        $rid = $create->json('id');
+
+        $this->postJson("/api/recursos/{$rid}/unidades", ['patrimonio' => 'SOM-1'])
+            ->assertStatus(422);
+    }
+
+    public function test_backfill_migration_cria_unidades_para_recurso_pre_existente(): void
+    {
+        // Insere um recurso "legado" direto na tabela (só coluna quantidade)
+        \DB::table('recursos')->insert([
+            'nome' => 'Legado',
+            'responsavel_nome' => 'X',
+            'responsavel_email' => 'x@ex.test',
+            'quantidade' => 4,
+            'status' => 'ativo',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $rid = \DB::table('recursos')->max('id');
+
+        $migration = require database_path('migrations/2026_07_17_100001_backfill_recurso_unidades.php');
+        $migration->up();
+
+        $this->assertSame(4, Recurso::find($rid)->unidades()->count());
+        $this->assertSame(4, Recurso::find($rid)->quantidade);
+    }
 }

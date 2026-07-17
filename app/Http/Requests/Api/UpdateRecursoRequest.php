@@ -17,7 +17,6 @@ class UpdateRecursoRequest extends FormRequest
             'nome' => ['sometimes', 'required', 'string', 'max:255'],
             'responsavel_nome' => ['sometimes', 'required', 'string', 'max:255'],
             'responsavel_email' => ['sometimes', 'required', 'email', 'max:255'],
-            'quantidade' => ['sometimes', 'required', 'integer', 'min:1'],
             'status' => ['sometimes', 'in:ativo,inativo'],
             'disponibilidades' => ['sometimes', 'array'],
             'disponibilidades.*.dias_semana' => ['required', 'array', 'min:1'],

@@ -6,22 +6,29 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\StoreRecursoRequest;
 use App\Http\Requests\Api\UpdateRecursoRequest;
 use App\Models\Recurso;
+use App\Models\RecursoUnidade;
 use App\Services\RecursoDisponibilidadeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class RecursoController extends Controller
 {
     public function index(): JsonResource
     {
-        return JsonResource::collection(Recurso::with('disponibilidades')->orderBy('nome')->get());
+        return JsonResource::collection(
+            Recurso::with('disponibilidades', 'unidades')
+                ->withCount(['unidadesAtivas'])
+                ->orderBy('nome')
+                ->get(),
+        );
     }
 
     public function show(Recurso $recurso): JsonResource
     {
-        return new JsonResource($recurso->load('disponibilidades'));
+        return new JsonResource($recurso->load('disponibilidades', 'unidades')->loadCount('unidadesAtivas'));
     }
 
     public function store(StoreRecursoRequest $request): JsonResponse
@@ -29,17 +36,28 @@ class RecursoController extends Controller
         $this->authorize('create', Recurso::class);
         $data = $request->validated();
         $disp = $data['disponibilidades'] ?? [];
-        unset($data['disponibilidades']);
+        $unidades = $data['unidades'] ?? [];
+        unset($data['disponibilidades'], $data['unidades']);
 
-        $recurso = DB::transaction(function () use ($data, $disp) {
+        $recurso = DB::transaction(function () use ($data, $disp, $unidades) {
             $r = Recurso::create($data);
             foreach ($disp as $d) {
                 $r->disponibilidades()->create($d);
             }
+            foreach ($unidades as $u) {
+                $r->unidades()->create([
+                    'patrimonio' => $u['patrimonio'],
+                    'observacoes' => $u['observacoes'] ?? null,
+                    'status' => 'ativo',
+                ]);
+            }
             return $r;
         });
 
-        return response()->json($recurso->load('disponibilidades'), 201);
+        return response()->json(
+            $recurso->load('disponibilidades', 'unidades')->loadCount('unidadesAtivas'),
+            201,
+        );
     }
 
     public function update(UpdateRecursoRequest $request, Recurso $recurso): JsonResource
@@ -59,7 +77,7 @@ class RecursoController extends Controller
             }
         });
 
-        return new JsonResource($recurso->fresh('disponibilidades'));
+        return new JsonResource($recurso->fresh(['disponibilidades', 'unidades'])->loadCount('unidadesAtivas'));
     }
 
     public function destroy(Recurso $recurso): JsonResponse
@@ -105,5 +123,52 @@ class RecursoController extends Controller
             ->get();
 
         return JsonResource::collection($reservas);
+    }
+
+    public function listarUnidades(Recurso $recurso): JsonResource
+    {
+        $this->authorize('view', $recurso);
+        return JsonResource::collection($recurso->unidades()->orderBy('patrimonio')->get());
+    }
+
+    public function criarUnidade(Request $request, Recurso $recurso): JsonResponse
+    {
+        $this->authorize('update', $recurso);
+
+        $data = $request->validate([
+            'patrimonio' => [
+                'required', 'string', 'max:60',
+                Rule::unique('recurso_unidades', 'patrimonio')->where('recurso_id', $recurso->id),
+            ],
+            'observacoes' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $unidade = $recurso->unidades()->create([
+            'patrimonio' => $data['patrimonio'],
+            'observacoes' => $data['observacoes'] ?? null,
+            'status' => 'ativo',
+        ]);
+
+        return response()->json($unidade, 201);
+    }
+
+    public function atualizarUnidade(Request $request, Recurso $recurso, RecursoUnidade $unidade): JsonResource
+    {
+        $this->authorize('update', $recurso);
+        abort_unless($unidade->recurso_id === $recurso->id, 404);
+
+        $data = $request->validate([
+            'patrimonio' => [
+                'sometimes', 'required', 'string', 'max:60',
+                Rule::unique('recurso_unidades', 'patrimonio')
+                    ->where('recurso_id', $recurso->id)
+                    ->ignore($unidade->id),
+            ],
+            'status' => ['sometimes', 'in:ativo,inativo'],
+            'observacoes' => ['sometimes', 'nullable', 'string', 'max:500'],
+        ]);
+
+        $unidade->update($data);
+        return new JsonResource($unidade->fresh());
     }
 }
